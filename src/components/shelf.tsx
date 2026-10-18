@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -21,12 +22,15 @@ import {
 } from "@/components/ui/dialog"
 import type { CachedFirmware, CachedPart } from "@/lib/cache"
 import type { ConnectMode } from "@/lib/shelf"
-import { Download, RefreshCw, TriangleAlert, Usb } from "lucide-react"
+import { Download, RefreshCw, Star, TriangleAlert, Usb } from "lucide-react"
 
 type RemoteRelease = {
   version: string
   publishedAt: string
   releaseUrl: string
+  stars: number
+  downloads: number
+  downloadsNote: string
 }
 
 type FirmwareCard = {
@@ -71,7 +75,8 @@ export function Shelf() {
   const [log, setLog] = useState<string[]>([])
   const [progress, setProgress] = useState(0)
   const [flashError, setFlashError] = useState<string | null>(null)
-  const serialAvailable = typeof navigator !== "undefined" && "serial" in navigator
+  const [serialChecked, setSerialChecked] = useState(false)
+  const [serialAvailable, setSerialAvailable] = useState(false)
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -86,6 +91,8 @@ export function Shelf() {
   }, [])
 
   useEffect(() => {
+    setSerialAvailable("serial" in navigator)
+    setSerialChecked(true)
     const timer = window.setTimeout(() => {
       void load()
     }, 0)
@@ -240,7 +247,7 @@ export function Shelf() {
         </div>
       </header>
 
-      {!serialAvailable && (
+      {serialChecked && !serialAvailable && (
         <Notice tone="warn">
           このブラウザはシリアルポートを開けません。書き込みは Chromium（Chrome か Edge）で行ってください。保管自体はこの画面のままできます。
         </Notice>
@@ -392,29 +399,48 @@ function FirmwareRow({
 }) {
   const cached = firmware.cached
   const total = cached?.parts.reduce((sum, part) => sum + part.bytes, 0) ?? 0
+  const stars = firmware.remote?.stars ?? cached?.stars
+  const downloads = firmware.remote?.downloads ?? cached?.downloads
+  const downloadsNote = firmware.remote?.downloadsNote ?? cached?.downloadsNote
   let action = "安定版を保管"
   if (cached && firmware.updateAvailable) action = "安定版に更新"
   if (cached && !firmware.updateAvailable) action = "もう一度保管"
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2">
-          {firmware.name}
-          {cached ? <Badge>保管済み</Badge> : <Badge variant="outline">未保管</Badge>}
-          {firmware.updateAvailable && <Badge variant="secondary">新しい安定版</Badge>}
-        </CardTitle>
-        <CardDescription>{firmware.summary}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2 text-sm">
-        <p>
-          保管: {cached ? `${cached.version}（${formatBytes(total)}、${formatDate(cached.savedAt)}）` : "まだありません"}
-        </p>
-        <p className="text-muted-foreground">
-          公開中の安定版: {firmware.remote ? `${firmware.remote.version}（${formatDate(firmware.remote.publishedAt)}）` : firmware.remoteError ?? "未確認"}
-        </p>
-        {cached && <PartList parts={cached.parts} />}
-        {error && <Notice tone="warn">{error}</Notice>}
-      </CardContent>
+      <div className="grid gap-4 px-(--card-spacing) sm:grid-cols-[11rem_1fr] sm:items-start">
+        <Cover id={firmware.id} name={firmware.name} />
+        <div className="flex min-w-0 flex-col gap-3">
+          <CardHeader className="px-0">
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              {firmware.name}
+              {cached ? <Badge>保管済み</Badge> : <Badge variant="outline">未保管</Badge>}
+              {firmware.updateAvailable && <Badge variant="secondary">新しい安定版</Badge>}
+            </CardTitle>
+            <CardDescription>{firmware.summary}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 px-0 text-sm">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <span className="inline-flex items-center gap-1">
+                <Star className="size-3.5 text-primary" />
+                スター {stars === undefined ? "未取得" : formatCount(stars)}
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Download className="size-3.5 text-primary" />
+                ダウンロード {downloads === undefined ? "未取得" : formatCount(downloads)}
+              </span>
+            </div>
+            {downloadsNote && <p className="text-xs leading-5 text-muted-foreground">{downloadsNote}</p>}
+            <p>
+              保管: {cached ? `${cached.version}（${formatBytes(total)}、${formatDate(cached.savedAt)}）` : "まだありません"}
+            </p>
+            <p className="text-muted-foreground">
+              公開中の安定版: {firmware.remote ? `${firmware.remote.version}（${formatDate(firmware.remote.publishedAt)}）` : firmware.remoteError ?? "未確認"}
+            </p>
+            {cached && <PartList parts={cached.parts} />}
+            {error && <Notice tone="warn">{error}</Notice>}
+          </CardContent>
+        </div>
+      </div>
       <CardFooter className="flex flex-wrap gap-2">
         <Button className="h-11" variant="outline" disabled={!online || busy} onClick={onSave}>
           {busy ? <RefreshCw className="animate-spin" /> : <Download />}
@@ -426,6 +452,30 @@ function FirmwareRow({
         </Button>
       </CardFooter>
     </Card>
+  )
+}
+
+function Cover({ id, name }: { id: string; name: string }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) {
+    return (
+      <div className="flex aspect-[4/3] items-center justify-center rounded-lg bg-muted text-xs text-muted-foreground">
+        画像なし
+      </div>
+    )
+  }
+  return (
+    <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-muted">
+      <Image
+        src={`/api/firmware/${id}/cover`}
+        alt={`${name} のサムネイル`}
+        fill
+        sizes="(min-width: 640px) 11rem, 100vw"
+        unoptimized
+        className="object-contain"
+        onError={() => setFailed(true)}
+      />
+    </div>
   )
 }
 
@@ -453,6 +503,10 @@ function Notice({ children, tone }: { children: string; tone: "warn" }) {
       {children}
     </p>
   )
+}
+
+function formatCount(value: number): string {
+  return new Intl.NumberFormat("ja-JP").format(value)
 }
 
 function formatBytes(bytes: number): string {

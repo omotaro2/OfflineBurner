@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 import {
+  downloadsForAsset,
   parseHexOffset,
   partsFromZip,
   pickStableRelease,
@@ -61,4 +62,14 @@ test("partsFromZip follows the manifest offset", () => {
 
 test("parseHexOffset rejects garbage", () => {
   assert.throws(() => parseHexOffset("nope"))
+})
+
+test("downloadsForAsset reads the named release file", () => {
+  const stable = release("v1.1.2", false)
+  stable.assets = [
+    { name: "merged.bin", browser_download_url: "https://example.test/m", size: 10, download_count: 32 },
+    { name: "other.bin", browser_download_url: "https://example.test/o", size: 4, download_count: 2 },
+  ]
+  assert.equal(downloadsForAsset(stable, "merged.bin"), 32)
+  assert.throws(() => downloadsForAsset(stable, "missing.bin"))
 })

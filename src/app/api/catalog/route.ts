@@ -1,5 +1,5 @@
 import { listCaches } from "@/lib/cache"
-import { devices, shelf } from "@/lib/shelf"
+import { devices, probeShelf, shelf } from "@/lib/shelf"
 import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
@@ -9,7 +9,7 @@ export async function GET() {
   const probes = await Promise.all(
     shelf.map(async (item) => {
       try {
-        return { id: item.id, remote: await item.probe(), error: null as string | null }
+        return { id: item.id, remote: await probeShelf(item), error: null as string | null }
       } catch (error) {
         return {
           id: item.id,

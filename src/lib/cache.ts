@@ -26,6 +26,10 @@ export type CachedFirmware = {
   connect: ConnectMode
   eraseAll: true
   parts: CachedPart[]
+  stars?: number
+  downloads?: number
+  downloadsNote?: string
+  coverContentType?: string
 }
 
 function directoryFor(id: string): string {
@@ -43,6 +47,20 @@ export async function readCache(id: string): Promise<CachedFirmware | null> {
   try {
     const raw = await readFile(path.join(directoryFor(id), "meta.json"), "utf8")
     return JSON.parse(raw) as CachedFirmware
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+    throw error
+  }
+}
+
+export async function readCover(id: string): Promise<{ data: Buffer; contentType: string } | null> {
+  const meta = await readCache(id)
+  if (!meta?.coverContentType) return null
+  try {
+    return {
+      data: await readFile(path.join(directoryFor(id), "cover")),
+      contentType: meta.coverContentType,
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
     throw error
@@ -81,6 +99,9 @@ export async function saveLatest(id: string): Promise<CachedFirmware> {
         sha256: createHash("sha256").update(part.data).digest("hex"),
       })
     }
+    if (image.cover) {
+      await writeFile(path.join(staging, "cover"), image.cover.data)
+    }
     const meta: CachedFirmware = {
       id,
       version: image.version,
@@ -94,6 +115,10 @@ export async function saveLatest(id: string): Promise<CachedFirmware> {
       connect: item.connect,
       eraseAll: true,
       parts,
+      stars: image.stars,
+      downloads: image.downloads,
+      downloadsNote: image.downloadsNote,
+      coverContentType: image.cover?.contentType,
     }
     await writeFile(path.join(staging, "meta.json"), JSON.stringify(meta, null, 2))
     const backup = `${finalDirectory}.bak`

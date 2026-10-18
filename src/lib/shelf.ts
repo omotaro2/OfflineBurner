@@ -1,11 +1,14 @@
 import { unzipSync } from "fflate"
 import {
   downloadBytes,
+  downloadsForAsset,
   latestStable,
   partsFromZip,
+  repoStars,
   spiffsOffset,
   versionFromTag,
   type FirmwareBytes,
+  type GithubRelease,
   type RemoteRelease,
 } from "./firmware"
 
@@ -34,6 +37,7 @@ export type FirmwareInfo = {
 
 export type ResolvedImage = RemoteRelease & {
   parts: FirmwareBytes[]
+  cover: { contentType: string; data: Uint8Array } | null
 }
 
 export type ShelfItem = FirmwareInfo & {
@@ -132,13 +136,71 @@ export function findShelfItem(id: string): ShelfItem | undefined {
   return shelf.find((item) => item.id === id)
 }
 
-async function probeMeshtasticHeltec(): Promise<RemoteRelease> {
-  const release = await latestStable("meshtastic/firmware")
+const probeCache = new Map<string, { at: number; value: Promise<RemoteRelease> }>()
+
+export function probeShelf(item: ShelfItem): Promise<RemoteRelease> {
+  const hit = probeCache.get(item.id)
+  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.value
+  const value = item.probe().then(
+    (release) => release,
+    (error: unknown) => {
+      probeCache.delete(item.id)
+      throw error
+    },
+  )
+  probeCache.set(item.id, { at: Date.now(), value })
+  return value
+}
+
+const HELTEC_THUMB = {
+  url: "https://meshtastic.org/assets/images/HTIT-WB32LA(F)_V3-bd4009e3b90756e5bc8a679428950e7f.webp",
+  contentType: "image/webp",
+}
+const CARDPUTER_THUMB = {
+  url: "https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1178/Cardputer-Adv_01.webp",
+  contentType: "image/webp",
+}
+
+async function describeRelease(
+  repo: string,
+  release: GithubRelease,
+  downloads: number,
+  downloadsNote: string,
+  thumbnail: { url: string; contentType: string },
+): Promise<RemoteRelease> {
   return {
     version: versionFromTag(release.tag_name),
     publishedAt: release.published_at,
     releaseUrl: release.html_url,
+    stars: await repoStars(repo),
+    downloads,
+    downloadsNote,
+    thumbnailUrl: thumbnail.url,
+    thumbnailType: thumbnail.contentType,
   }
+}
+
+async function coverFrom(remote: RemoteRelease): Promise<ResolvedImage["cover"]> {
+  try {
+    return {
+      contentType: remote.thumbnailType,
+      data: await downloadBytes(remote.thumbnailUrl),
+    }
+  } catch {
+    return null
+  }
+}
+
+async function probeMeshtasticHeltec(): Promise<RemoteRelease> {
+  const release = await latestStable("meshtastic/firmware")
+  const version = versionFromTag(release.tag_name)
+  return describeRelease(
+    "meshtastic/firmware",
+    release,
+    downloadsForAsset(release, `firmware-esp32s3-${version}.zip`),
+    "ESP32-S3 版リリース一式の回数です。Heltec 単体の数ではありません。",
+    HELTEC_THUMB,
+  )
 }
 
 async function downloadMeshtasticHeltec(): Promise<ResolvedImage> {
@@ -154,6 +216,7 @@ async function downloadMeshtasticHeltec(): Promise<ResolvedImage> {
   })
   return {
     ...remote,
+    cover: await coverFrom(remote),
     parts: [
       { label: "factory", offset: 0, data: factory },
       { label: "littlefs", offset, data: littlefs },
@@ -163,11 +226,17 @@ async function downloadMeshtasticHeltec(): Promise<ResolvedImage> {
 
 async function probeMeshtasticAdv(): Promise<RemoteRelease> {
   const release = await latestStable("anton-vinogradov/meshtastic-adv")
-  return {
-    version: versionFromTag(release.tag_name),
-    publishedAt: release.published_at,
-    releaseUrl: release.html_url,
-  }
+  const version = versionFromTag(release.tag_name)
+  return describeRelease(
+    "anton-vinogradov/meshtastic-adv",
+    release,
+    downloadsForAsset(release, "meshtastic-adv-cardputer-adv-merged.bin"),
+    "merged イメージのダウンロード回数です。",
+    {
+      url: `https://github.com/anton-vinogradov/meshtastic-adv/releases/download/v${version}/meshtastic-adv-hero.gif`,
+      contentType: "image/gif",
+    },
+  )
 }
 
 async function downloadMeshtasticAdv(): Promise<ResolvedImage> {
@@ -177,17 +246,20 @@ async function downloadMeshtasticAdv(): Promise<ResolvedImage> {
   )
   return {
     ...remote,
+    cover: await coverFrom(remote),
     parts: [{ label: "merged", offset: 0, data }],
   }
 }
 
 async function probeRatspeak(): Promise<RemoteRelease> {
   const release = await latestStable("ratspeak/rsCardputer")
-  return {
-    version: versionFromTag(release.tag_name),
-    publishedAt: release.published_at,
-    releaseUrl: release.html_url,
-  }
+  return describeRelease(
+    "ratspeak/rsCardputer",
+    release,
+    downloadsForAsset(release, "rscardputer-full.zip"),
+    "full パッケージのダウンロード回数です。",
+    CARDPUTER_THUMB,
+  )
 }
 
 async function downloadRatspeak(): Promise<ResolvedImage> {
@@ -197,6 +269,7 @@ async function downloadRatspeak(): Promise<ResolvedImage> {
   )
   return {
     ...remote,
+    cover: await coverFrom(remote),
     parts: partsFromZip(unzipSync(zip)),
   }
 }

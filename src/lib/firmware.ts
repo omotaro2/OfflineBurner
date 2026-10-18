@@ -7,13 +7,18 @@ export type GithubRelease = {
   prerelease: boolean
   published_at: string
   html_url: string
-  assets: { name: string; browser_download_url: string; size: number }[]
+  assets: { name: string; browser_download_url: string; size: number; download_count: number }[]
 }
 
 export type RemoteRelease = {
   version: string
   publishedAt: string
   releaseUrl: string
+  stars: number
+  downloads: number
+  downloadsNote: string
+  thumbnailUrl: string
+  thumbnailType: string
 }
 
 export type FirmwareBytes = {
@@ -28,6 +33,21 @@ export function pickStableRelease(releases: GithubRelease[]): GithubRelease | nu
 
 export function versionFromTag(tag: string): string {
   return tag.replace(/^v/, "")
+}
+
+export function downloadsForAsset(release: GithubRelease, assetName: string): number {
+  const asset = release.assets.find((item) => item.name === assetName)
+  if (!asset) {
+    throw new Error(`リリースに ${assetName} がありません`)
+  }
+  return asset.download_count
+}
+
+export async function repoStars(repo: string): Promise<number> {
+  const body = await fetchJson<{ stargazers_count: number }>(
+    `https://api.github.com/repos/${repo}`,
+  )
+  return body.stargazers_count
 }
 
 export function parseHexOffset(offset: string): number {

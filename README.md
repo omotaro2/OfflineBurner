@@ -8,7 +8,7 @@
 - Cardputer Adv 向け Ratspeak full（Standalone と RNode）
 - Heltec WiFi LoRa 32 V3 向け Meshtastic 公式の安定版
 
-プレリリースは取りません。攻撃用のファームウェアは置いていません。
+プレリリースは取りません。攻撃用のファームウェアは置いていません。M5Burner の店全体ではなく、この3つだけです。各カードにはサムネイル、GitHub のスター数、その安定版ファイルのダウンロード数を出します。Heltec のダウンロード数は基板単体ではなく、ESP32-S3 版リリース一式の回数です。
 
 ## 使い方
 
