@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { coverFile, githubLink, toProjectCard } from "./projects.ts"
+import { coverFile, githubLink, inspectImage, toProjectCard } from "./projects.ts"
 
 const cover = "d635d0b8b77dc66c9d7c42d6758baae6.jpg"
 
@@ -63,6 +63,19 @@ test("keeps Bad Apple and marks shelf repos", () => {
     }),
   )
   assert.equal(shelf?.shelfId, "meshtastic-adv-cardputer")
+})
+
+test("inspectImage tells a merged card image from an app image", () => {
+  const app = new Uint8Array(64)
+  app[0] = 0xe9
+  assert.equal(inspectImage(app), "app")
+  const merged = new Uint8Array(0x10001)
+  merged[0] = 0xe9
+  merged[0x8000] = 0xaa
+  merged[0x8001] = 0x50
+  merged[0x10000] = 0xe9
+  assert.equal(inspectImage(merged), "merged")
+  assert.equal(inspectImage(new Uint8Array([0])), "invalid")
 })
 
 test("github and cover values stay on the public hosts", () => {

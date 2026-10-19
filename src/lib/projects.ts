@@ -4,6 +4,10 @@ const CATALOG_URL =
   "https://raw.githubusercontent.com/bmorcelli/M5Stack-json-fw/main/v2/all_device_firmware.json"
 
 export const COVER_BASE = "https://m5burner-cdn.m5stack.com/cover/"
+const FIRMWARE_BASE = "https://m5burner-cdn.m5stack.com/firmware/"
+export const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+export type ImageKind = "merged" | "app" | "unsupported"
 
 const NAME_BLOCK =
   /bruce|marauder|\bnemo\b|pork\s*chop|\bshark\b|ghost[\s-]*esp|bad[\s-]*card|(bit|bus)[\s-]*pirate|pwnagotchi|palnagotchi|m5gotchi|\bevil|killerhack|wifihck|wifi.?hck|\bsniffer\b|\bkiller\b/i
@@ -27,9 +31,18 @@ export type ProjectCard = {
   version: string
   publishedAt: string
   shelfId: string | null
+  firmwareFile: string
+  bytes: number
+  kind: ImageKind
 }
 
-type RawVersion = { version?: unknown; published_at?: unknown }
+type RawVersion = {
+  version?: unknown
+  published_at?: unknown
+  file?: unknown
+  Fs?: unknown
+  install?: { format?: unknown }
+}
 
 type RawFirmware = {
   fid?: unknown
@@ -44,7 +57,7 @@ type RawFirmware = {
 }
 
 const store = globalThis as typeof globalThis & {
-  __fieldShelfProjectsV2?: { at: number; projects: ProjectCard[] }
+  __fieldShelfProjectsV3?: { at: number; projects: ProjectCard[] }
 }
 
 export function toProjectCard(input: unknown): ProjectCard | null {
@@ -69,6 +82,9 @@ export function toProjectCard(input: unknown): ProjectCard | null {
     version: latest.version,
     publishedAt: latest.publishedAt,
     shelfId: shelfIdFor(github),
+    firmwareFile: latest.firmwareFile,
+    bytes: latest.bytes,
+    kind: latest.kind,
   }
 }
 
@@ -89,7 +105,7 @@ export function coverFile(value: unknown): string | null {
 }
 
 export async function listCardputerProjects(): Promise<ProjectCard[]> {
-  const memory = store.__fieldShelfProjectsV2
+  const memory = store.__fieldShelfProjectsV3
   if (memory && Date.now() - memory.at < 10 * 60_000) return memory.projects
   const response = await fetch(CATALOG_URL, {
     headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
@@ -107,8 +123,43 @@ export async function listCardputerProjects(): Promise<ProjectCard[]> {
     .map((item) => toProjectCard(item))
     .filter((item): item is ProjectCard => item !== null)
     .sort((a, b) => b.downloads - a.downloads)
-  store.__fieldShelfProjectsV2 = { at: Date.now(), projects }
+  store.__fieldShelfProjectsV3 = { at: Date.now(), projects }
   return projects
+}
+
+export async function findProject(id: string): Promise<ProjectCard | null> {
+  if (!/^[\w-]{6,80}$/.test(id)) return null
+  const projects = await listCardputerProjects()
+  return projects.find((project) => project.id === id) ?? null
+}
+
+export async function downloadFirmware(file: string): Promise<Uint8Array> {
+  if (!/^[a-f0-9]{32}\.bin$/i.test(file)) {
+    throw new Error("不明なファームウェアファイルです")
+  }
+  const response = await fetch(`${FIRMWARE_BASE}${file}`, {
+    headers: { "User-Agent": USER_AGENT },
+    signal: AbortSignal.timeout(180_000),
+  })
+  if (!response.ok) {
+    throw new Error(`ファームウェアを取得できません (${response.status})`)
+  }
+  const data = new Uint8Array(await response.arrayBuffer())
+  if (data.byteLength > MAX_IMAGE_BYTES) {
+    throw new Error("8MB を超えるので Cardputer には保管しません")
+  }
+  return data
+}
+
+export function inspectImage(data: Uint8Array): "merged" | "app" | "invalid" {
+  if (data.byteLength === 0 || data.byteLength > MAX_IMAGE_BYTES) return "invalid"
+  if (data[0] !== 0xe9) return "invalid"
+  const merged =
+    data.byteLength > 0x10000 &&
+    data[0x8000] === 0xaa &&
+    data[0x8001] === 0x50 &&
+    data[0x10000] === 0xe9
+  return merged ? "merged" : "app"
 }
 
 export async function readProjectCover(file: string): Promise<{ data: Uint8Array; contentType: string } | null> {
@@ -133,14 +184,29 @@ function shelfIdFor(github: string | null): string | null {
   return SHELF_REPOS[repo] ?? null
 }
 
-function latestVersion(value: unknown): { version: string; publishedAt: string } {
-  if (!Array.isArray(value)) return { version: "", publishedAt: "" }
-  let best = { version: "", publishedAt: "" }
+function latestVersion(value: unknown): {
+  version: string
+  publishedAt: string
+  firmwareFile: string
+  bytes: number
+  kind: ImageKind
+} {
+  const empty = { version: "", publishedAt: "", firmwareFile: "", bytes: 0, kind: "unsupported" as ImageKind }
+  if (!Array.isArray(value)) return empty
+  let best = empty
   for (const item of value as RawVersion[]) {
     if (!item || typeof item !== "object") continue
     const publishedAt = typeof item.published_at === "string" ? item.published_at : ""
     const version = typeof item.version === "string" ? clip(item.version, 32) : ""
-    if (publishedAt >= best.publishedAt) best = { version, publishedAt }
+    if (publishedAt < best.publishedAt) continue
+    const firmwareFile = typeof item.file === "string" && /^[a-f0-9]{32}\.bin$/i.test(item.file) ? item.file : ""
+    const bytes = count(item.Fs)
+    const format = item.install && typeof item.install === "object" ? item.install.format : ""
+    let kind: ImageKind = "unsupported"
+    if (firmwareFile && bytes > 0 && bytes <= MAX_IMAGE_BYTES) {
+      kind = format === "merged" ? "merged" : "app"
+    }
+    best = { version, publishedAt, firmwareFile, bytes, kind }
   }
   return best
 }

@@ -20,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ProjectBrowser } from "@/components/project-browser"
+import { ProjectDesk } from "@/components/project-desk"
 import type { CachedFirmware, CachedPart } from "@/lib/cache"
 import type { ConnectMode } from "@/lib/shelf"
 import { Download, RefreshCw, Star, TriangleAlert, Usb } from "lucide-react"
@@ -306,7 +306,7 @@ export function Shelf() {
               />
             ))}
           </div>
-          {device.id === "cardputer-adv" && <ProjectBrowser online={catalog?.online ?? false} />}
+          {device.id === "cardputer-adv" && <ProjectDesk online={catalog?.online ?? false} />}
         </div>
       )}
 

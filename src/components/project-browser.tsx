@@ -8,11 +8,32 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input"
 import type { ProjectCard } from "@/lib/projects"
 import { cn } from "cn"
-import { Download, ExternalLink } from "lucide-react"
+import { Download, ExternalLink, Usb } from "lucide-react"
 
 const PAGE = 12
 
-export function ProjectBrowser({ online }: { online: boolean }) {
+export type SavedBrief = {
+  id: string
+  version: string
+  publishedAt: string
+  kind: "merged" | "app"
+}
+
+export function ProjectBrowser({
+  online,
+  saved,
+  busyId,
+  errors,
+  onSave,
+  onFlash,
+}: {
+  online: boolean
+  saved: SavedBrief[]
+  busyId: string | null
+  errors: Record<string, string>
+  onSave: (id: string) => void
+  onFlash: (id: string) => void
+}) {
   const [projects, setProjects] = useState<ProjectCard[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
@@ -57,7 +78,7 @@ export function ProjectBrowser({ online }: { online: boolean }) {
       <div className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold tracking-tight">Cardputer のプロジェクト</h2>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          ネットがあるとき、M5Burner の公開一覧から Cardputer 向けを表示します。サムネイルとダウンロード数を見て、GitHub があればそこを開けます。この一覧からは書き込みません。攻撃向けのファームは入れていません。
+          ネットがあるとき、M5Burner の公開一覧から Cardputer 向けを表示します。オフライン用に保管すると、あとから書けます。全体イメージの書き込みは Launcher も消します。アプリ単体は SD へコピーして Launcher に入れます。攻撃向けのファームは入れていません。
         </p>
       </div>
       {!online && (
@@ -127,7 +148,15 @@ export function ProjectBrowser({ online }: { online: boolean }) {
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             {visible.slice(0, shown).map((project) => (
-              <ProjectTile key={project.id} project={project} />
+              <ProjectTile
+                key={project.id}
+                project={project}
+                saved={saved.find((item) => item.id === project.id) ?? null}
+                busy={busyId === project.id}
+                error={errors[project.id] ?? ""}
+                onSave={() => onSave(project.id)}
+                onFlash={() => onFlash(project.id)}
+              />
             ))}
           </div>
           {shown < visible.length && (
@@ -141,7 +170,28 @@ export function ProjectBrowser({ online }: { online: boolean }) {
   )
 }
 
-function ProjectTile({ project }: { project: ProjectCard }) {
+function ProjectTile({
+  project,
+  saved,
+  busy,
+  error,
+  onSave,
+  onFlash,
+}: {
+  project: ProjectCard
+  saved: SavedBrief | null
+  busy: boolean
+  error: string
+  onSave: () => void
+  onFlash: () => void
+}) {
+  const same = saved && saved.version === project.version && saved.publishedAt === project.publishedAt
+  const newer = saved && project.publishedAt > saved.publishedAt
+  let saveLabel = "オフライン用に保管"
+  if (busy) saveLabel = "保管しています"
+  else if (project.kind === "unsupported") saveLabel = "8MB を超えます"
+  else if (newer) saveLabel = "新しい版を保管"
+  else if (saved) saveLabel = "もう一度保管"
   return (
     <Card className="overflow-hidden">
       <ProjectCover file={project.cover} name={project.name} />
@@ -160,10 +210,29 @@ function ProjectTile({ project }: { project: ProjectCard }) {
             ダウンロード {project.downloads.toLocaleString("ja-JP")}
           </span>
           {project.version && <span>版 {project.version}</span>}
+          {saved && <Badge variant="secondary">保管済み {saved.version}</Badge>}
+          {project.kind === "app" && <span>アプリ単体</span>}
+          {project.kind === "merged" && <span>全体イメージ</span>}
         </div>
+        {project.kind === "app" && (
+          <p className="text-xs leading-5 text-muted-foreground">
+            全消去では書きません。SD に置いて、Launcher の Install で枠へ入れます。
+          </p>
+        )}
+        {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm leading-6 text-destructive">{error}</p>}
       </CardContent>
-      {project.github && (
-        <CardFooter>
+      <CardFooter className="flex flex-wrap gap-2">
+        <Button className="h-11" variant="outline" disabled={busy || project.kind === "unsupported"} onClick={onSave}>
+          <Download />
+          {saveLabel}
+        </Button>
+        {saved?.kind === "merged" && (
+          <Button className="h-11" disabled={busy} onClick={onFlash}>
+            <Usb />
+            {same ? "オフラインで書き込む" : "保管済みを書き込む"}
+          </Button>
+        )}
+        {project.github && (
           <a
             className={cn(buttonVariants({ variant: "outline" }), "h-11")}
             href={project.github}
@@ -173,8 +242,8 @@ function ProjectTile({ project }: { project: ProjectCard }) {
             <ExternalLink />
             GitHub
           </a>
-        </CardFooter>
-      )}
+        )}
+      </CardFooter>
     </Card>
   )
 }
