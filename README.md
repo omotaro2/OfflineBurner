@@ -12,7 +12,7 @@
 
 Cardputer のタブでは、ネットがあるときに M5Burner の公開プロジェクトも一覧できます。攻撃向けのファームは出していません。「オフライン用に保管」で bin をこの PC に残します。全体イメージは、オフラインのあと「オフラインで書き込む」で全消去して書けます。その書き込みは Launcher も消します。
 
-Launcher を残すときは、microSD を USB リーダで挿してフォルダを選びます。Cardputer のシリアル端子からはカードの中は見えません。選んだ場所の `field-shelf` に bin と台帳を置き、Launcher の SD メニューから Install します。「古い bin を更新」は、台帳の日付が公開版または手元の保管より古いファイルを書き直します。
+Launcher を残すときは、Cardputer に microSD を挿して USB でつなぎ、Launcher のメニューで USB を選びます。挿さったカードが PC のドライブになるので、「Cardputer の SD を開く」でそのドライブを選び、bin を送ります。送り終わったら USB を終了し、Launcher の SD メニューから `field-shelf` を開いて Install します。「古い bin を更新」は、台帳の日付が公開版または手元の保管より古いファイルを書き直します。
 
 ## 使い方
 

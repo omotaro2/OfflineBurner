@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -50,16 +50,38 @@ export function SdCard({
     setRows(manifest.files.map((entry) => decorate(entry, sizes[entry.filename] ?? null, saved, remote)))
   }, [remote, saved])
 
+  useEffect(() => {
+    let cancel = false
+    void loadRememberedHandle().then(async (directory) => {
+      if (cancel || !directory) return
+      const permission = await directory.queryPermission({ mode: "readwrite" }).catch(() => "prompt" as const)
+      if (permission !== "granted") return
+      try {
+        await reload(directory)
+        if (!cancel) {
+          setRoot(directory)
+          setMessage("前回開いた Cardputer の SD を見ています。")
+        }
+      } catch {
+        if (!cancel) setMessage("前回のカードは今つながっていません。Launcher の USB を入れてから開き直してください。")
+      }
+    })
+    return () => {
+      cancel = true
+    }
+  }, [reload])
+
   const choose = async () => {
     setError("")
     try {
-      const directory = await window.showDirectoryPicker({ mode: "readwrite" })
+      const directory = await window.showDirectoryPicker({ id: "cardputer-sd", mode: "readwrite" })
+      await rememberHandle(directory)
       setRoot(directory)
       await reload(directory)
-      setMessage("field-shelf フォルダを見ています。")
+      setMessage("Cardputer に挿さった SD を開きました。")
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === "AbortError") return
-      setError(reason instanceof Error ? reason.message : "フォルダを開けません")
+      setError(driveError(reason))
     }
   }
 
@@ -76,7 +98,7 @@ export function SdCard({
       await reload(root)
       setMessage(`${saved.length} 件をカードへコピーしました。`)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "コピーに失敗しました")
+      setError(driveError(reason))
     } finally {
       setBusy(false)
     }
@@ -107,7 +129,7 @@ export function SdCard({
       await reload(root)
       setMessage(count === 0 ? "更新が必要な bin はありません。" : `${count} 件を更新しました。`)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "更新に失敗しました")
+      setError(driveError(reason))
     } finally {
       setBusy(false)
     }
@@ -116,10 +138,13 @@ export function SdCard({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">SD カード</h2>
-        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          microSD を USB リーダで挿すか、カードが USB ドライブとして見えている状態でフォルダを選びます。Cardputer のシリアル端子からは、カードの中のファイルは見えません。選んだ場所に field-shelf フォルダを作り、bin と台帳を置きます。Launcher の SD からそのフォルダを開き Install すると、Launcher 本体は残ります。
-        </p>
+        <h2 className="text-lg font-semibold tracking-tight">Cardputer の SD へ送る</h2>
+        <ol className="flex max-w-3xl list-decimal flex-col gap-1 pl-5 text-sm leading-6 text-muted-foreground">
+          <li>Cardputer に microSD を挿し、USB ケーブルでこの PC とつなぐ。</li>
+          <li>Launcher を開き、メニューの USB を選ぶ。挿さったカードが PC のドライブになる。</li>
+          <li>「Cardputer の SD を開く」で、そのドライブを選ぶ。</li>
+          <li>保管した bin を送る。送り終わったら USB を終了し、Launcher の SD から field-shelf を開いて Install する。</li>
+        </ol>
       </div>
       {!picker && (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm leading-6 text-destructive">
@@ -129,11 +154,11 @@ export function SdCard({
       <div className="flex flex-wrap gap-2">
         <Button className="h-11" variant="outline" disabled={!picker || busy} onClick={() => void choose()}>
           <Usb />
-          カードのフォルダを選ぶ
+          Cardputer の SD を開く
         </Button>
         <Button className="h-11" disabled={!root || busy || saved.length === 0} onClick={() => void copySaved()}>
           {busy ? <RefreshCw className="animate-spin" /> : <Usb />}
-          保管済みをコピー
+          挿したカードへ送る
         </Button>
         <Button className="h-11" variant="outline" disabled={!root || busy} onClick={() => void updateOld()}>
           古い bin を更新
@@ -145,7 +170,7 @@ export function SdCard({
         <Card>
           <CardHeader>
             <CardTitle>カードにはまだ台帳がありません</CardTitle>
-            <CardDescription>保管済みをコピーすると、field-shelf フォルダに bin と manifest.json ができます。</CardDescription>
+            <CardDescription>挿したカードへ送ると、field-shelf フォルダに bin と manifest.json ができます。</CardDescription>
           </CardHeader>
         </Card>
       )}
@@ -244,6 +269,53 @@ async function fetchSaved(id: string): Promise<SavedFile | null> {
   if (!response.ok) return null
   const body = (await response.json()) as { saved?: SavedFile[] }
   return body.saved?.find((item) => item.id === id) ?? null
+}
+
+function driveError(reason: unknown): string {
+  if (reason instanceof DOMException && (reason.name === "NotFoundError" || reason.name === "InvalidStateError")) {
+    return "カードが見えません。Cardputer で Launcher の USB を入れたまま、もう一度開いてください。"
+  }
+  return reason instanceof Error ? reason.message : "カードへ書けません"
+}
+
+function openHandleDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("field-shelf", 1)
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains("handles")) {
+        request.result.createObjectStore("handles")
+      }
+    }
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+  })
+}
+
+function rememberHandle(directory: FileSystemDirectoryHandle): Promise<void> {
+  return openHandleDb().then(
+    (database) =>
+      new Promise((resolve, reject) => {
+        const transaction = database.transaction("handles", "readwrite")
+        transaction.objectStore("handles").put(directory, "cardputer-sd")
+        transaction.oncomplete = () => resolve()
+        transaction.onerror = () => reject(transaction.error)
+      }),
+  )
+}
+
+function loadRememberedHandle(): Promise<FileSystemDirectoryHandle | null> {
+  return openHandleDb()
+    .then(
+      (database) =>
+        new Promise<FileSystemDirectoryHandle | null>((resolve) => {
+          const request = database.transaction("handles", "readonly").objectStore("handles").get("cardputer-sd")
+          request.onsuccess = () => {
+            resolve(request.result instanceof FileSystemDirectoryHandle ? request.result : null)
+          }
+          request.onerror = () => resolve(null)
+        }),
+    )
+    .catch(() => null)
 }
 
 function labelFor(state: Freshness): string {
