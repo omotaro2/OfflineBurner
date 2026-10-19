@@ -47,6 +47,17 @@ export type ShelfItem = FirmwareInfo & {
 
 export const devices: DeviceInfo[] = [
   {
+    id: "cardputer",
+    name: "Cardputer（無印）",
+    portHint: "USB JTAG/serial（Linux では /dev/ttyACM0）",
+    prep: [
+      "側面の電源スイッチを OFF にする。",
+      "StampS3 の G0 を押したまま USB を挿し、1〜2 秒後に離す。",
+      "無印向けの bin は Cardputer Adv でも使えます。Adv に書くときも G0 の手順は同じです。",
+      "SD へ送るときは、無印でも Adv でも Launcher の USB で挿さったカードを開きます。",
+    ],
+  },
+  {
     id: "cardputer-adv",
     name: "Cardputer Adv",
     portHint: "USB JTAG/serial（Linux では /dev/ttyACM0）",
@@ -55,6 +66,7 @@ export const devices: DeviceInfo[] = [
       "G0 を押したまま USB を挿し、1〜2 秒後に離す。",
       "書き終わって充電に戻すときは、スイッチを ON にする。",
       "Cap LoRa-1262 を載せるときは、起動前にアンテナを付ける。",
+      "無印向けのプロジェクトも、この基板の SD と書き込みで使えます。",
     ],
   },
   {

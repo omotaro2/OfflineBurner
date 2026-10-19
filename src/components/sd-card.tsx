@@ -60,7 +60,7 @@ export function SdCard({
         await reload(directory)
         if (!cancel) {
           setRoot(directory)
-          setMessage("前回開いた Cardputer の SD を見ています。")
+          setMessage("前回開いた無印または Adv の SD を見ています。")
         }
       } catch {
         if (!cancel) setMessage("前回のカードは今つながっていません。Launcher の USB を入れてから開き直してください。")
@@ -78,7 +78,7 @@ export function SdCard({
       await rememberHandle(directory)
       setRoot(directory)
       await reload(directory)
-      setMessage("Cardputer に挿さった SD を開きました。")
+      setMessage("挿さった SD を開きました。無印でも Adv でも、同じ field-shelf フォルダへ送ります。")
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === "AbortError") return
       setError(driveError(reason))
@@ -138,11 +138,11 @@ export function SdCard({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">Cardputer の SD へ送る</h2>
+        <h2 className="text-lg font-semibold tracking-tight">無印と Adv の SD へ送る</h2>
         <ol className="flex max-w-3xl list-decimal flex-col gap-1 pl-5 text-sm leading-6 text-muted-foreground">
-          <li>Cardputer に microSD を挿し、USB ケーブルでこの PC とつなぐ。</li>
+          <li>無印または Adv に microSD を挿し、USB ケーブルでこの PC とつなぐ。</li>
           <li>Launcher を開き、メニューの USB を選ぶ。挿さったカードが PC のドライブになる。</li>
-          <li>「Cardputer の SD を開く」で、そのドライブを選ぶ。</li>
+          <li>「無印 / Adv の SD を開く」で、そのドライブを選ぶ。</li>
           <li>保管した bin を送る。送り終わったら USB を終了し、Launcher の SD から field-shelf を開いて Install する。</li>
         </ol>
       </div>
@@ -154,7 +154,7 @@ export function SdCard({
       <div className="flex flex-wrap gap-2">
         <Button className="h-11" variant="outline" disabled={!picker || busy} onClick={() => void choose()}>
           <Usb />
-          Cardputer の SD を開く
+          無印 / Adv の SD を開く
         </Button>
         <Button className="h-11" disabled={!root || busy || saved.length === 0} onClick={() => void copySaved()}>
           {busy ? <RefreshCw className="animate-spin" /> : <Usb />}
@@ -273,7 +273,7 @@ async function fetchSaved(id: string): Promise<SavedFile | null> {
 
 function driveError(reason: unknown): string {
   if (reason instanceof DOMException && (reason.name === "NotFoundError" || reason.name === "InvalidStateError")) {
-    return "カードが見えません。Cardputer で Launcher の USB を入れたまま、もう一度開いてください。"
+    return "カードが見えません。無印または Adv で Launcher の USB を入れたまま、もう一度開いてください。"
   }
   return reason instanceof Error ? reason.message : "カードへ書けません"
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { coverFile, githubLink, inspectImage, toProjectCard } from "./projects.ts"
+import { coverFile, githubLink, inspectImage, japaneseDescription, toProjectCard } from "./projects.ts"
 
 const cover = "d635d0b8b77dc66c9d7c42d6758baae6.jpg"
 
@@ -76,6 +76,21 @@ test("inspectImage tells a merged card image from an app image", () => {
   merged[0x10000] = 0xe9
   assert.equal(inspectImage(merged), "merged")
   assert.equal(inspectImage(new Uint8Array([0])), "invalid")
+})
+
+test("uses a Japanese description when one is supplied", () => {
+  const card = toProjectCard(entry({}), { "A Doom port.": "Doom の移植です。" })
+  assert.equal(card?.description, "Doom の移植です。")
+})
+
+test("drops attack text before it can be translated", () => {
+  assert.equal(toProjectCard(entry({ description: "A deauth toy." }), { "A deauth toy.": "翻訳しない" }), null)
+})
+
+test("keeps Japanese text and falls back when a translation is missing", () => {
+  assert.equal(japaneseDescription("すでに日本語です。", { "すでに日本語です。": "別の文" }), "すでに日本語です。")
+  assert.equal(japaneseDescription("Hello", {}), "Hello")
+  assert.equal(japaneseDescription("Hello", { Hello: "   " }), "Hello")
 })
 
 test("github and cover values stay on the public hosts", () => {

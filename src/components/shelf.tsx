@@ -306,7 +306,9 @@ export function Shelf() {
               />
             ))}
           </div>
-          {device.id === "cardputer-adv" && <ProjectDesk online={catalog?.online ?? false} />}
+          {(device.id === "cardputer" || device.id === "cardputer-adv") && (
+            <ProjectDesk online={catalog?.online ?? false} />
+          )}
         </div>
       )}
 

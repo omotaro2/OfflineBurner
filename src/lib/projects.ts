@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+
 const USER_AGENT = "field-shelf/0.1"
 
 const CATALOG_URL =
@@ -57,10 +60,29 @@ type RawFirmware = {
 }
 
 const store = globalThis as typeof globalThis & {
-  __fieldShelfProjectsV3?: { at: number; projects: ProjectCard[] }
+  __fieldShelfProjectsV4?: { at: number; projects: ProjectCard[] }
 }
 
-export function toProjectCard(input: unknown): ProjectCard | null {
+let descriptionDict: Record<string, string> | null = null
+
+function loadDescriptionDict(): Record<string, string> {
+  if (descriptionDict) return descriptionDict
+  try {
+    const parsed = JSON.parse(readFileSync(join(process.cwd(), "src/lib/description-ja.json"), "utf8")) as unknown
+    const dict: Record<string, string> = {}
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      for (const [key, value] of Object.entries(parsed)) {
+        if (typeof value === "string") dict[key] = value
+      }
+    }
+    descriptionDict = dict
+  } catch {
+    descriptionDict = {}
+  }
+  return descriptionDict
+}
+
+export function toProjectCard(input: unknown, dict: Readonly<Record<string, string>> = {}): ProjectCard | null {
   if (!input || typeof input !== "object") return null
   const raw = input as RawFirmware
   if (String(raw.category ?? "").toLowerCase() !== "cardputer") return null
@@ -75,7 +97,7 @@ export function toProjectCard(input: unknown): ProjectCard | null {
     id,
     name,
     author: clip(raw.author, 40),
-    description: clip(full, 180),
+    description: japaneseDescription(clip(full, 180), dict),
     downloads: count(raw.download),
     cover: coverFile(raw.cover),
     github,
@@ -105,7 +127,7 @@ export function coverFile(value: unknown): string | null {
 }
 
 export async function listCardputerProjects(): Promise<ProjectCard[]> {
-  const memory = store.__fieldShelfProjectsV3
+  const memory = store.__fieldShelfProjectsV4
   if (memory && Date.now() - memory.at < 10 * 60_000) return memory.projects
   const response = await fetch(CATALOG_URL, {
     headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
@@ -119,11 +141,12 @@ export async function listCardputerProjects(): Promise<ProjectCard[]> {
   if (!Array.isArray(body)) {
     throw new Error("プロジェクト一覧の形式が違います")
   }
+  const dict = loadDescriptionDict()
   const projects = body
-    .map((item) => toProjectCard(item))
+    .map((item) => toProjectCard(item, dict))
     .filter((item): item is ProjectCard => item !== null)
     .sort((a, b) => b.downloads - a.downloads)
-  store.__fieldShelfProjectsV3 = { at: Date.now(), projects }
+  store.__fieldShelfProjectsV4 = { at: Date.now(), projects }
   return projects
 }
 
@@ -222,6 +245,16 @@ function count(value: unknown): number {
   const number = typeof value === "number" ? value : Number(value)
   if (!Number.isFinite(number) || number < 0) return 0
   return Math.round(number)
+}
+
+const KANA = /[\u3040-\u30ff]/
+
+export function japaneseDescription(source: string, dict: Readonly<Record<string, string>>): string {
+  const text = source.trim()
+  if (!text) return ""
+  if (KANA.test(text)) return text
+  const translated = dict[text]?.replace(/\s+/g, " ").trim()
+  return translated || text
 }
 
 function contentTypeFor(file: string): string {

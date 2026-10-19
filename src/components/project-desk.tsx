@@ -241,7 +241,9 @@ export function ProjectDesk({ online }: { online: boolean }) {
             <div className="flex flex-col gap-3 text-sm leading-6">
               <p className="flex gap-2 text-muted-foreground">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0 text-primary" />
-                <span>標準 Launcher も消えます。残すなら中止して、SD へコピーしてから Launcher の Install を使ってください。</span>
+                <span>
+                  無印でも Adv でも、先頭から全消去して書きます。標準 Launcher も消えます。残すなら中止して、その基板の SD へコピーしてから Launcher の Install を使ってください。
+                </span>
               </p>
               <label className="flex items-start gap-2">
                 <input
