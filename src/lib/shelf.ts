@@ -56,7 +56,7 @@ export const devices: DeviceInfo[] = [
       "側面の電源スイッチを OFF にする。",
       "StampS3 の G0 を押したまま USB を挿し、1〜2 秒後に離す。",
       "無印向けの bin は Cardputer Adv でも使えます。Adv に書くときも G0 の手順は同じです。",
-      "SD へ送るときは、無印でも Adv でも Launcher の USB で挿さったカードを開きます。",
+      "SD へ送るときは、Launcher のメニューで USB を選んだまま、この PC とつなぎます。bin はカードの downloads に入ります。",
     ],
   },
   {

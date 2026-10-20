@@ -85,7 +85,7 @@ export function ProjectDesk({ online }: { online: boolean }) {
             <CardHeader>
               <CardTitle>まだありません</CardTitle>
               <CardDescription>
-                下の一覧でプロジェクトを開き、オフライン用に保管します。SD へ送ると、Launcher の Install で入れられます。
+                下の一覧でプロジェクトを開き、オフライン用に保管します。Launcher の USB で downloads へ送ると、Install で入れられます。
               </CardDescription>
             </CardHeader>
           </Card>

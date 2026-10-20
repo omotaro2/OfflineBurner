@@ -76,7 +76,7 @@ export function ProjectBrowser({
       <div className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold tracking-tight">Cardputer（無印）のプロジェクト</h2>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          ネットがあるとき、M5Burner の公開一覧から無印 Cardputer 向けを表示します。Cardputer Adv は無印の上位互換なので、同じ bin を無印と Adv の SD に送れます。ファイル名はプロジェクト名です。Launcher の SD でその名前を選び、Install します。攻撃向けのファームは入れていません。
+          ネットがあるとき、M5Burner の公開一覧から無印 Cardputer 向けを表示します。Cardputer Adv は無印の上位互換なので、同じ bin を無印と Adv の SD に送れます。ファイル名はプロジェクト名です。Launcher の USB でつながったカードの downloads に入り、SD の downloads から Install します。攻撃向けのファームは入れていません。
         </p>
       </div>
       {!online && (
@@ -208,7 +208,7 @@ function ProjectTile({
           <span>SD から Install</span>
         </div>
         <p className="text-xs leading-5 text-muted-foreground">
-          SD のファイル名はプロジェクト名です。Launcher の SD でその名前を選び、Install します。
+          SD のファイル名はプロジェクト名です。Launcher の SD で downloads を開き、その名前を選んで Install します。
         </p>
         {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm leading-6 text-destructive">{error}</p>}
       </CardContent>

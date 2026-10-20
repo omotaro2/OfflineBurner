@@ -1,19 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { uniqueSdFilename } from "@/lib/launcher-payload"
-import {
-  freshness,
-  parseManifest,
-  serializeManifest,
-  upsertEntry,
-  type CardEntry,
-  type CardManifest,
-  type Freshness,
-} from "@/lib/sd-manifest"
+import { freshness, type CardEntry, type Freshness } from "@/lib/sd-manifest"
 import type { SavedBrief } from "@/components/project-browser"
 import { RefreshCw, Usb } from "lucide-react"
 
@@ -23,7 +14,23 @@ type SavedFile = SavedBrief & {
   sha256: string
 }
 
-type DirectoryHandle = FileSystemDirectoryHandle
+type Drive = {
+  device: string
+  mount: string | null
+  label: string
+  fstype: string
+  readOnly: boolean
+  writable: boolean
+}
+
+type ShelfResponse = {
+  drives?: Drive[]
+  device?: string | null
+  files?: CardEntry[]
+  sizes?: Record<string, number>
+  message?: string
+  error?: string
+}
 
 type Row = CardEntry & { fileBytes: number | null; state: Freshness; referenceLabel: string }
 
@@ -38,139 +45,167 @@ export function SdCard({
   remote: { id: string; version: string; publishedAt: string }[]
   onEnsure: (id: string) => Promise<void>
 }) {
-  const [root, setRoot] = useState<DirectoryHandle | null>(null)
+  const [drives, setDrives] = useState<Drive[]>([])
+  const [device, setDevice] = useState<string | null>(null)
   const [rows, setRows] = useState<Row[]>([])
-  const [message, setMessage] = useState("")
+  const [message, setMessage] = useState("Launcher の USB を探しています。")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
-  const picker = typeof window !== "undefined" && "showDirectoryPicker" in window
+  const busyRef = useRef(false)
 
-  const reload = useCallback(async (directory: DirectoryHandle) => {
-    const { manifest, sizes } = await readShelf(directory)
-    setRows(manifest.files.map((entry) => decorate(entry, sizes[entry.filename] ?? null, saved, remote)))
-  }, [remote, saved])
+  const apply = useCallback(
+    (body: ShelfResponse) => {
+      const nextDrives = body.drives
+      if (nextDrives) setDrives(nextDrives)
+      setDevice((current) => {
+        if (!nextDrives) return body.device ?? current
+        if (current && nextDrives.some((item) => item.device === current)) return current
+        return body.device && nextDrives.some((item) => item.device === body.device) ? body.device : nextDrives[0]?.device ?? null
+      })
+      if (body.files) {
+        const sizes = body.sizes ?? {}
+        setRows(body.files.map((entry) => decorate(entry, sizes[entry.filename] ?? null, saved, remote)))
+      }
+      if (body.message) setMessage(body.message)
+    },
+    [remote, saved],
+  )
+
+  const reload = useCallback(async () => {
+    const query = device ? `?device=${encodeURIComponent(device)}` : ""
+    const response = await fetch(`/api/sd${query}`, { cache: "no-store" })
+    const body = (await response.json().catch(() => null)) as ShelfResponse | null
+    if (!body) return
+    apply(body)
+  }, [apply, device])
 
   useEffect(() => {
     let cancel = false
-    void loadRememberedHandle().then(async (directory) => {
-      if (cancel || !directory) return
-      const permission = await directory.queryPermission({ mode: "readwrite" }).catch(() => "prompt" as const)
-      if (permission !== "granted") return
-      try {
-        await reload(directory)
-        if (!cancel) {
-          setRoot(directory)
-          setMessage("前回開いた無印または Adv の SD を見ています。")
-        }
-      } catch {
-        if (!cancel) setMessage("前回のカードは今つながっていません。Launcher の USB を入れてから開き直してください。")
-      }
-    })
+    const load = () => {
+      if (cancel || busyRef.current) return
+      void reload().catch(() => undefined)
+    }
+    load()
+    const timer = window.setInterval(load, 4000)
     return () => {
       cancel = true
+      window.clearInterval(timer)
     }
   }, [reload])
 
-  const choose = async () => {
-    setError("")
-    try {
-      const directory = await window.showDirectoryPicker({ id: "cardputer-sd", mode: "readwrite" })
-      await rememberHandle(directory)
-      setRoot(directory)
-      await reload(directory)
-      setMessage("挿さった SD を開きました。無印でも Adv でも、同じ field-shelf フォルダへ送ります。")
-    } catch (reason) {
-      if (reason instanceof DOMException && reason.name === "AbortError") return
-      setError(driveError(reason))
-    }
+  const post = async (ids: string[]) => {
+    const response = await fetch("/api/sd", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device, ids }),
+    })
+    const body = (await response.json().catch(() => null)) as ShelfResponse | null
+    if (!response.ok) throw new Error(body?.error ?? "カードへ書けません")
+    if (body) apply(body)
   }
 
   const copySaved = async () => {
-    if (!root) return
+    if (!device) {
+      setError("Launcher の USB がまだ見えていません。メニューの USB を選んだまま、この PC とつないでください。")
+      return
+    }
+    busyRef.current = true
     setBusy(true)
     setError("")
     try {
-      let manifest = (await readShelf(root)).manifest
-      for (const item of saved) {
-        manifest = await writeSaved(root, manifest, item)
-      }
-      await writeManifest(root, manifest)
-      await reload(root)
-      setMessage(`${saved.length} 件をカードへコピーしました。`)
+      await post(saved.map((item) => item.id))
     } catch (reason) {
-      setError(driveError(reason))
+      setError(reason instanceof Error ? reason.message : "カードへ書けません")
     } finally {
+      busyRef.current = false
       setBusy(false)
+      void reload().catch(() => undefined)
     }
   }
 
   const updateOld = async () => {
-    if (!root) return
+    if (!device) {
+      setError("Launcher の USB がまだ見えていません。メニューの USB を選んだまま、この PC とつないでください。")
+      return
+    }
+    busyRef.current = true
     setBusy(true)
     setError("")
     try {
-      let manifest = (await readShelf(root)).manifest
-      let count = 0
+      const ids: string[] = []
       for (const row of rows) {
         if (row.state !== "update" && row.state !== "missing") continue
         const remoteItem = remote.find((item) => item.id === row.id)
         const savedItem = saved.find((item) => item.id === row.id)
-        const reference = remoteItem ?? savedItem
-        if (!reference) continue
+        if (!remoteItem && !savedItem) continue
         if (online && remoteItem && (!savedItem || remoteItem.publishedAt > savedItem.publishedAt)) {
           await onEnsure(row.id)
         }
-        const fresh = await fetchSaved(row.id)
-        if (!fresh) continue
-        manifest = await writeSaved(root, manifest, fresh)
-        count += 1
+        ids.push(row.id)
       }
-      await writeManifest(root, manifest)
-      await reload(root)
-      setMessage(count === 0 ? "更新が必要な bin はありません。" : `${count} 件を更新しました。`)
+      if (ids.length === 0) {
+        setMessage("更新が必要な bin はありません。")
+        return
+      }
+      await post(ids)
     } catch (reason) {
-      setError(driveError(reason))
+      setError(reason instanceof Error ? reason.message : "カードへ書けません")
     } finally {
+      busyRef.current = false
       setBusy(false)
+      void reload().catch(() => undefined)
     }
   }
+
+  const active = drives.find((item) => item.device === device) ?? null
 
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">無印と Adv の SD へ送る</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Launcher の USB で downloads へ送る</h2>
         <ol className="flex max-w-3xl list-decimal flex-col gap-1 pl-5 text-sm leading-6 text-muted-foreground">
-          <li>無印または Adv に microSD を挿し、USB ケーブルでこの PC とつなぐ。</li>
-          <li>Launcher を開き、メニューの USB を選ぶ。挿さったカードが PC のドライブになる。</li>
-          <li>「無印 / Adv の SD を開く」で、そのドライブを選ぶ。</li>
-          <li>保管した bin を送る。ファイル名はプロジェクト名です。USB を終了し、Launcher の SD でその名前を選んで Install します。</li>
+          <li>無印または Adv で Launcher を開き、メニューの USB を選ぶ。画面に USB の印が出ているあいだ、挿さったカードがこの PC のドライブになる。</li>
+          <li>このページが Launcher SD を見つけたら、「downloads へ送る」を押す。bin はカードの downloads に、プロジェクト名で保存される。</li>
+          <li>Launcher で USB を終了し、SD から downloads を開く。その名前の bin を選んで Install する。</li>
         </ol>
       </div>
-      {!picker && (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm leading-6 text-destructive">
-          このブラウザはフォルダを選べません。Chromium で http://127.0.0.1:43127 を開いてください。
-        </p>
-      )}
       <div className="flex flex-wrap gap-2">
-        <Button className="h-11" variant="outline" disabled={!picker || busy} onClick={() => void choose()}>
+        <Button className="h-11" variant="outline" disabled={busy} onClick={() => void reload()}>
           <Usb />
-          無印 / Adv の SD を開く
+          接続を確認
         </Button>
-        <Button className="h-11" disabled={!root || busy || saved.length === 0} onClick={() => void copySaved()}>
+        <Button className="h-11" disabled={!device || busy || saved.length === 0} onClick={() => void copySaved()}>
           {busy ? <RefreshCw className="animate-spin" /> : <Usb />}
-          挿したカードへ送る
+          downloads へ送る
         </Button>
-        <Button className="h-11" variant="outline" disabled={!root || busy} onClick={() => void updateOld()}>
+        <Button className="h-11" variant="outline" disabled={!device || busy} onClick={() => void updateOld()}>
           古い bin を更新
         </Button>
       </div>
-      {message && <p className="text-sm text-muted-foreground">{message}</p>}
+      {drives.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {drives.map((item) => (
+            <Button
+              key={item.device}
+              className="h-11"
+              variant={item.device === device ? "default" : "outline"}
+              onClick={() => setDevice(item.device)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      )}
+      <p aria-live="polite" className="text-sm text-muted-foreground">
+        {message}
+        {active?.mount ? `（${active.label}）` : ""}
+      </p>
       {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm leading-6 text-destructive">{error}</p>}
-      {root && rows.length === 0 && (
+      {active && rows.length === 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>カードにはまだ台帳がありません</CardTitle>
-            <CardDescription>挿したカードへ送ると、field-shelf フォルダに bin と manifest.json ができます。</CardDescription>
+            <CardTitle>downloads にはまだ台帳がありません</CardTitle>
+            <CardDescription>送ると、downloads にプロジェクト名の bin と、この棚の manifest.json ができます。</CardDescription>
           </CardHeader>
         </Card>
       )}
@@ -189,7 +224,7 @@ export function SdCard({
                   {row.fileBytes === null ? " / ファイルなし" : ""}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">{row.filename}</CardContent>
+              <CardContent className="text-xs text-muted-foreground">downloads/{row.filename}</CardContent>
             </Card>
           ))}
         </div>
@@ -213,122 +248,6 @@ function decorate(
     state: freshness(entry, fileBytes, reference),
     referenceLabel: reference ? `${reference.version}（${reference.publishedAt || "日付なし"}）` : "",
   }
-}
-
-async function readShelf(root: DirectoryHandle): Promise<{ manifest: CardManifest; sizes: Record<string, number> }> {
-  try {
-    const directory = await root.getDirectoryHandle("field-shelf")
-    const sizes: Record<string, number> = {}
-    for await (const [name, handle] of directory.entries()) {
-      if (handle.kind !== "file" || !name.endsWith(".bin")) continue
-      sizes[name] = (await (handle as FileSystemFileHandle).getFile()).size
-    }
-    try {
-      const manifestHandle = await directory.getFileHandle("manifest.json")
-      const text = await (await manifestHandle.getFile()).text()
-      return { manifest: parseManifest(text), sizes }
-    } catch {
-      return { manifest: { version: 1, files: [] }, sizes }
-    }
-  } catch {
-    return { manifest: { version: 1, files: [] }, sizes: {} }
-  }
-}
-
-async function writeSaved(root: DirectoryHandle, manifest: CardManifest, item: SavedFile): Promise<CardManifest> {
-  const response = await fetch(`/api/projects/${item.id}/file`, { cache: "no-store" })
-  if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `${item.name} の保管を読めません`)
-  }
-  const data = new Uint8Array(await response.arrayBuffer())
-  const previous = manifest.files.find((entry) => entry.id === item.id)
-  const filename = uniqueSdFilename(
-    item.name,
-    item.version,
-    item.id,
-    manifest.files.filter((entry) => entry.id !== item.id).map((entry) => entry.filename),
-  )
-  const directory = await root.getDirectoryHandle("field-shelf", { create: true })
-  if (previous && previous.filename !== filename) {
-    await directory.removeEntry(previous.filename).catch(() => undefined)
-  }
-  const handle = await directory.getFileHandle(filename, { create: true })
-  const writable = await handle.createWritable()
-  await writable.write(new Blob([data]))
-  await writable.close()
-  return upsertEntry(manifest, {
-    id: item.id,
-    name: item.name,
-    version: item.version,
-    publishedAt: item.publishedAt,
-    filename,
-    bytes: data.byteLength,
-    sha256: item.sha256,
-    kind: item.kind,
-  })
-}
-
-async function writeManifest(root: DirectoryHandle, manifest: CardManifest) {
-  const directory = await root.getDirectoryHandle("field-shelf", { create: true })
-  const handle = await directory.getFileHandle("manifest.json", { create: true })
-  const writable = await handle.createWritable()
-  await writable.write(serializeManifest(manifest))
-  await writable.close()
-}
-
-async function fetchSaved(id: string): Promise<SavedFile | null> {
-  const response = await fetch("/api/projects/saved", { cache: "no-store" })
-  if (!response.ok) return null
-  const body = (await response.json()) as { saved?: SavedFile[] }
-  return body.saved?.find((item) => item.id === id) ?? null
-}
-
-function driveError(reason: unknown): string {
-  if (reason instanceof DOMException && (reason.name === "NotFoundError" || reason.name === "InvalidStateError")) {
-    return "カードが見えません。無印または Adv で Launcher の USB を入れたまま、もう一度開いてください。"
-  }
-  return reason instanceof Error ? reason.message : "カードへ書けません"
-}
-
-function openHandleDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open("field-shelf", 1)
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains("handles")) {
-        request.result.createObjectStore("handles")
-      }
-    }
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
-  })
-}
-
-function rememberHandle(directory: FileSystemDirectoryHandle): Promise<void> {
-  return openHandleDb().then(
-    (database) =>
-      new Promise((resolve, reject) => {
-        const transaction = database.transaction("handles", "readwrite")
-        transaction.objectStore("handles").put(directory, "cardputer-sd")
-        transaction.oncomplete = () => resolve()
-        transaction.onerror = () => reject(transaction.error)
-      }),
-  )
-}
-
-function loadRememberedHandle(): Promise<FileSystemDirectoryHandle | null> {
-  return openHandleDb()
-    .then(
-      (database) =>
-        new Promise<FileSystemDirectoryHandle | null>((resolve) => {
-          const request = database.transaction("handles", "readonly").objectStore("handles").get("cardputer-sd")
-          request.onsuccess = () => {
-            resolve(request.result instanceof FileSystemDirectoryHandle ? request.result : null)
-          }
-          request.onerror = () => resolve(null)
-        }),
-    )
-    .catch(() => null)
 }
 
 function labelFor(state: Freshness): string {
