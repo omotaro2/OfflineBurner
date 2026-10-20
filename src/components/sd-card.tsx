@@ -1,258 +1,178 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Badge } from "@/components/ui/badge"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { CheckRow, StatusLegend, cardToneLabel, type CardTone } from "@/components/card-tone"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { freshness, type CardEntry, type Freshness } from "@/lib/sd-manifest"
-import type { SavedBrief } from "@/components/project-browser"
-import { RefreshCw, Usb } from "lucide-react"
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import type { LauncherCard } from "@/components/use-launcher-card"
+import { RefreshCw, Trash2, Usb } from "lucide-react"
 
-type SavedFile = SavedBrief & {
-  name: string
-  bytes: number
-  sha256: string
+const RANK: Record<CardTone, number> = {
+  update: 0,
+  missing: 1,
+  "card-newer": 2,
+  same: 3,
+  foreign: 4,
+  absent: 5,
 }
 
-type Drive = {
-  device: string
-  mount: string | null
-  label: string
-  fstype: string
-  readOnly: boolean
-  writable: boolean
-}
-
-type ShelfResponse = {
-  drives?: Drive[]
-  device?: string | null
-  files?: CardEntry[]
-  sizes?: Record<string, number>
-  message?: string
-  error?: string
-}
-
-type Row = CardEntry & { fileBytes: number | null; state: Freshness; referenceLabel: string }
-
-export function SdCard({
-  online,
-  saved,
-  remote,
-  onEnsure,
-}: {
-  online: boolean
-  saved: SavedFile[]
-  remote: { id: string; version: string; publishedAt: string }[]
-  onEnsure: (id: string) => Promise<void>
-}) {
-  const [drives, setDrives] = useState<Drive[]>([])
-  const [device, setDevice] = useState<string | null>(null)
-  const [rows, setRows] = useState<Row[]>([])
-  const [message, setMessage] = useState("Launcher の USB を探しています。")
-  const [error, setError] = useState("")
-  const [busy, setBusy] = useState(false)
-  const busyRef = useRef(false)
-
-  const apply = useCallback(
-    (body: ShelfResponse) => {
-      const nextDrives = body.drives
-      if (nextDrives) setDrives(nextDrives)
-      setDevice((current) => {
-        if (!nextDrives) return body.device ?? current
-        if (current && nextDrives.some((item) => item.device === current)) return current
-        return body.device && nextDrives.some((item) => item.device === body.device) ? body.device : nextDrives[0]?.device ?? null
-      })
-      if (body.files) {
-        const sizes = body.sizes ?? {}
-        setRows(body.files.map((entry) => decorate(entry, sizes[entry.filename] ?? null, saved, remote)))
-      }
-      if (body.message) setMessage(body.message)
-    },
-    [remote, saved],
-  )
-
-  const reload = useCallback(async () => {
-    const query = device ? `?device=${encodeURIComponent(device)}` : ""
-    const response = await fetch(`/api/sd${query}`, { cache: "no-store" })
-    const body = (await response.json().catch(() => null)) as ShelfResponse | null
-    if (!body) return
-    apply(body)
-  }, [apply, device])
+export function SdCard({ card }: { card: LauncherCard }) {
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [confirm, setConfirm] = useState(false)
+  const master = useRef<HTMLInputElement>(null)
+  const names = useMemo(() => card.rows.map((row) => row.filename), [card.rows])
+  const selected = names.filter((name) => picked.has(name))
+  const all = names.length > 0 && selected.length === names.length
 
   useEffect(() => {
-    let cancel = false
-    const load = () => {
-      if (cancel || busyRef.current) return
-      void reload().catch(() => undefined)
-    }
-    load()
-    const timer = window.setInterval(load, 4000)
-    return () => {
-      cancel = true
-      window.clearInterval(timer)
-    }
-  }, [reload])
+    if (master.current) master.current.indeterminate = selected.length > 0 && !all
+  }, [all, selected.length])
 
-  const post = async (ids: string[]) => {
-    const response = await fetch("/api/sd", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ device, ids }),
-    })
-    const body = (await response.json().catch(() => null)) as ShelfResponse | null
-    if (!response.ok) throw new Error(body?.error ?? "カードへ書けません")
-    if (body) apply(body)
+  const ordered = [...card.rows].sort((a, b) => {
+    const toneA = a.tracked ? a.state : "foreign"
+    const toneB = b.tracked ? b.state : "foreign"
+    return RANK[toneA] - RANK[toneB] || a.name.localeCompare(b.name, "ja")
+  })
+
+  const remove = async () => {
+    setConfirm(false)
+    const done = await card.removeFiles(selected)
+    if (done) setPicked(new Set())
   }
-
-  const copySaved = async () => {
-    if (!device) {
-      setError("Launcher の USB がまだ見えていません。メニューの USB を選んだまま、この PC とつないでください。")
-      return
-    }
-    busyRef.current = true
-    setBusy(true)
-    setError("")
-    try {
-      await post(saved.map((item) => item.id))
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "カードへ書けません")
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-      void reload().catch(() => undefined)
-    }
-  }
-
-  const updateOld = async () => {
-    if (!device) {
-      setError("Launcher の USB がまだ見えていません。メニューの USB を選んだまま、この PC とつないでください。")
-      return
-    }
-    busyRef.current = true
-    setBusy(true)
-    setError("")
-    try {
-      const ids: string[] = []
-      for (const row of rows) {
-        if (row.state !== "update" && row.state !== "missing") continue
-        const remoteItem = remote.find((item) => item.id === row.id)
-        const savedItem = saved.find((item) => item.id === row.id)
-        if (!remoteItem && !savedItem) continue
-        if (online && remoteItem && (!savedItem || remoteItem.publishedAt > savedItem.publishedAt)) {
-          await onEnsure(row.id)
-        }
-        ids.push(row.id)
-      }
-      if (ids.length === 0) {
-        setMessage("更新が必要な bin はありません。")
-        return
-      }
-      await post(ids)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "カードへ書けません")
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-      void reload().catch(() => undefined)
-    }
-  }
-
-  const active = drives.find((item) => item.device === device) ?? null
 
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">Launcher の USB で downloads へ送る</h2>
-        <ol className="flex max-w-3xl list-decimal flex-col gap-1 pl-5 text-sm leading-6 text-muted-foreground">
-          <li>無印または Adv で Launcher を開き、メニューの USB を選ぶ。画面に USB の印が出ているあいだ、挿さったカードがこの PC のドライブになる。</li>
-          <li>このページが Launcher SD を見つけたら、「downloads へ送る」を押す。bin はカードの downloads に、プロジェクト名で保存される。</li>
-          <li>Launcher で USB を終了し、SD から downloads を開く。その名前の bin を選んで Install する。</li>
-        </ol>
+        <h2 className="text-lg font-semibold tracking-tight">カードの downloads</h2>
+        <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+          Launcher のメニューで USB を選んだまま、この PC とつなぐと、挿さったカードの downloads をここに出します。チェックした bin を削除できます。
+        </p>
+        <StatusLegend />
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Button className="h-11" variant="outline" disabled={busy} onClick={() => void reload()}>
-          <Usb />
-          接続を確認
-        </Button>
-        <Button className="h-11" disabled={!device || busy || saved.length === 0} onClick={() => void copySaved()}>
-          {busy ? <RefreshCw className="animate-spin" /> : <Usb />}
-          downloads へ送る
-        </Button>
-        <Button className="h-11" variant="outline" disabled={!device || busy} onClick={() => void updateOld()}>
-          古い bin を更新
-        </Button>
-      </div>
-      {drives.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          {drives.map((item) => (
-            <Button
-              key={item.device}
-              className="h-11"
-              variant={item.device === device ? "default" : "outline"}
-              onClick={() => setDevice(item.device)}
-            >
-              {item.label}
-            </Button>
-          ))}
-        </div>
-      )}
-      <p aria-live="polite" className="text-sm text-muted-foreground">
-        {message}
-        {active?.mount ? `（${active.label}）` : ""}
-      </p>
-      {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm leading-6 text-destructive">{error}</p>}
-      {active && rows.length === 0 && (
+      <DriveBar card={card} />
+      {card.error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm leading-6 text-destructive">{card.error}</p>}
+      {card.rows.length === 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>downloads にはまだ台帳がありません</CardTitle>
-            <CardDescription>送ると、downloads にプロジェクト名の bin と、この棚の manifest.json ができます。</CardDescription>
+            <CardTitle>{card.active ? "downloads は空です" : "カードがまだ見えていません"}</CardTitle>
+            <CardDescription>
+              {card.active
+                ? "保管タブでチェックした項目を送ると、ここにプロジェクト名の bin が出ます。"
+                : "Cardputer で Launcher の USB を選び、ケーブルを挿したまま「接続を確認」を押してください。"}
+            </CardDescription>
           </CardHeader>
         </Card>
       )}
-      {rows.length > 0 && (
-        <div className="grid gap-3">
-          {rows.map((row) => (
-            <Card key={row.id}>
-              <CardHeader>
-                <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                  {row.name}
-                  <Badge variant={row.state === "same" ? "secondary" : "outline"}>{labelFor(row.state)}</Badge>
-                </CardTitle>
-                <CardDescription>
-                  カード {row.version || "版不明"}
-                  {row.referenceLabel ? ` / 照合 ${row.referenceLabel}` : ""}
-                  {row.fileBytes === null ? " / ファイルなし" : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">downloads/{row.filename}</CardContent>
-            </Card>
-          ))}
-        </div>
+      {card.rows.length > 0 && (
+        <>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              ref={master}
+              type="checkbox"
+              className="size-5 accent-current"
+              checked={all}
+              disabled={card.busy}
+              onChange={(event) => setPicked(event.target.checked ? new Set(names) : new Set())}
+            />
+            {selected.length === 0 ? "すべて選択" : `${selected.length} 件選択`}
+          </label>
+          <div className="grid gap-2">
+            {ordered.map((row) => {
+              const tone: CardTone = row.tracked ? row.state : "foreign"
+              return (
+                <CheckRow
+                  key={row.filename}
+                  checked={picked.has(row.filename)}
+                  disabled={card.busy}
+                  tone={tone}
+                  title={row.name}
+                  detail={
+                    row.tracked
+                      ? `カード ${row.version || "版不明"}${row.referenceLabel ? ` / 照合 ${row.referenceLabel}` : ""}${row.fileBytes === null ? " / ファイルなし" : ""}`
+                      : "この棚の台帳にない bin です。OTA で落としたファイルかもしれません。"
+                  }
+                  meta={`downloads/${row.filename} ・ ${cardToneLabel(tone)}`}
+                  onChange={(checked) => {
+                    setPicked((current) => {
+                      const next = new Set(current)
+                      if (checked) next.add(row.filename)
+                      else next.delete(row.filename)
+                      return next
+                    })
+                  }}
+                />
+              )
+            })}
+          </div>
+        </>
       )}
+      <div className="sticky bottom-3 flex flex-wrap gap-2 rounded-xl border bg-background/95 p-2 backdrop-blur">
+        <Button className="h-11" variant="destructive" disabled={card.busy || selected.length === 0} onClick={() => setConfirm(true)}>
+          {card.busy ? <RefreshCw className="animate-spin" /> : <Trash2 />}
+          選択を削除
+        </Button>
+      </div>
+      <Dialog open={confirm} onOpenChange={setConfirm}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{selected.length} 件を downloads から削除</DialogTitle>
+            <DialogDescription>
+              Launcher の USB はつなぎたままにしてください。削除した bin は Install の一覧から消えます。
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="max-h-40 overflow-auto text-sm leading-6 text-muted-foreground">
+            {selected.slice(0, 8).map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+            {selected.length > 8 && <li>ほか {selected.length - 8} 件</li>}
+          </ul>
+          <DialogFooter>
+            <Button className="h-11" variant="outline" onClick={() => setConfirm(false)}>
+              中止
+            </Button>
+            <Button className="h-11" variant="destructive" onClick={() => void remove()}>
+              <Trash2 />
+              削除する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
 
-function decorate(
-  entry: CardEntry,
-  fileBytes: number | null,
-  saved: SavedFile[],
-  remote: { id: string; version: string; publishedAt: string }[],
-): Row {
-  const remoteItem = remote.find((item) => item.id === entry.id)
-  const savedItem = saved.find((item) => item.id === entry.id)
-  const reference = remoteItem ?? savedItem ?? null
-  return {
-    ...entry,
-    fileBytes,
-    state: freshness(entry, fileBytes, reference),
-    referenceLabel: reference ? `${reference.version}（${reference.publishedAt || "日付なし"}）` : "",
-  }
-}
-
-function labelFor(state: Freshness): string {
-  if (state === "same") return "一致"
-  if (state === "update") return "更新あり"
-  if (state === "card-newer") return "カードが新しい"
-  return "ファイルなし"
+export function DriveBar({ card }: { card: LauncherCard }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-2">
+        <Button className="h-11" variant="outline" disabled={card.busy} onClick={() => void card.reload()}>
+          <Usb />
+          接続を確認
+        </Button>
+        {card.drives.length > 1 &&
+          card.drives.map((item) => (
+            <Button
+              key={item.device}
+              className="h-11"
+              variant={item.device === card.device ? "default" : "outline"}
+              onClick={() => card.setDevice(item.device)}
+            >
+              {item.label}
+            </Button>
+          ))}
+      </div>
+      <p aria-live="polite" className="text-sm text-muted-foreground">
+        {card.message}
+        {card.active ? `（${card.active.label}）` : ""}
+      </p>
+    </div>
+  )
 }

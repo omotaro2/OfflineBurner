@@ -4,7 +4,15 @@ import path from "node:path"
 import { promisify } from "node:util"
 import { launcherSdImage, uniqueSdFilename } from "./launcher-payload"
 import { readSavedBin, readSavedProject } from "./project-store"
-import { isSdFilename, parseManifest, serializeManifest, upsertEntry, type CardEntry, type CardManifest } from "./sd-manifest"
+import {
+  binNamesToDelete,
+  isSdFilename,
+  parseManifest,
+  serializeManifest,
+  upsertEntry,
+  type CardEntry,
+  type CardManifest,
+} from "./sd-manifest"
 import {
   DOWNLOADS_DIR,
   explainWriteError,
@@ -140,6 +148,41 @@ export async function copySavedToDownloads(
   }
   const next = await readDownloads(drive.mount!)
   return { written, drive, files: next.manifest.files, sizes: next.sizes }
+}
+
+export async function deleteFromDownloads(
+  device: string,
+  filenames: string[],
+): Promise<{ removed: number; drive: LauncherDrive; files: CardEntry[]; sizes: Record<string, number> }> {
+  const unique = binNamesToDelete(filenames)
+  const drive = await prepareLauncherDrive(device)
+  const dir = path.join(drive.mount!, DOWNLOADS_DIR)
+  const current = await readDownloads(drive.mount!)
+  let removed = 0
+  for (const name of unique) {
+    const file = path.join(dir, name)
+    if (path.basename(file) !== name) throw new Error("削除できない名前です。")
+    try {
+      await unlink(file)
+      removed += 1
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue
+      throw explainWriteError(error)
+    }
+    delete current.sizes[name]
+  }
+  const manifest: CardManifest = {
+    version: 1,
+    files: current.manifest.files.filter((entry) => !unique.includes(entry.filename)),
+  }
+  try {
+    await writeCardFile(path.join(dir, "manifest.json"), Buffer.from(serializeManifest(manifest)))
+    await syncDirectory(dir)
+  } catch (error) {
+    throw explainWriteError(error)
+  }
+  const next = await readDownloads(drive.mount!)
+  return { removed, drive, files: next.manifest.files, sizes: next.sizes }
 }
 
 export async function prepareLauncherDrive(device: string): Promise<LauncherDrive> {

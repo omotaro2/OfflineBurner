@@ -1,6 +1,14 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { freshness, filenameFor, isSdFilename, parseManifest, serializeManifest, upsertEntry } from "./sd-manifest.ts"
+import {
+  binNamesToDelete,
+  freshness,
+  filenameFor,
+  isSdFilename,
+  parseManifest,
+  serializeManifest,
+  upsertEntry,
+} from "./sd-manifest.ts"
 
 const entry = {
   id: "4098f31c0a06c447e82b36261466ddd1",
@@ -26,6 +34,12 @@ test("freshness follows the published date and the file size", () => {
   assert.equal(freshness(entry, 100, { version: "0.0", publishedAt: "2024-01-01" }), "card-newer")
   assert.equal(freshness(entry, null, { version: "0.1", publishedAt: "2024-05-19" }), "missing")
   assert.equal(freshness(entry, 90, { version: "0.1", publishedAt: "2024-05-19" }), "missing")
+})
+
+test("delete names stay inside downloads", () => {
+  assert.deepEqual(binNamesToDelete(["Doom.bin", "Doom.bin"]), ["Doom.bin"])
+  assert.throws(() => binNamesToDelete(["../Doom.bin"]))
+  assert.throws(() => binNamesToDelete([]))
 })
 
 test("upsert replaces the same project", () => {

@@ -6,7 +6,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { cardToneClass, cardToneLabel, type CardTone } from "@/components/card-tone"
 import type { ProjectCard } from "@/lib/projects"
+import type { Freshness } from "@/lib/sd-manifest"
 import { cn } from "cn"
 import { Download, ExternalLink } from "lucide-react"
 
@@ -24,12 +26,14 @@ export function ProjectBrowser({
   saved,
   busyId,
   errors,
+  cardState,
   onSave,
 }: {
   online: boolean
   saved: SavedBrief[]
   busyId: string | null
   errors: Record<string, string>
+  cardState: Record<string, Freshness>
   onSave: (id: string) => void
 }) {
   const [projects, setProjects] = useState<ProjectCard[] | null>(null)
@@ -76,7 +80,7 @@ export function ProjectBrowser({
       <div className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold tracking-tight">Cardputer（無印）のプロジェクト</h2>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          ネットがあるとき、M5Burner の公開一覧から無印 Cardputer 向けを表示します。Cardputer Adv は無印の上位互換なので、同じ bin を無印と Adv の SD に送れます。ファイル名はプロジェクト名です。Launcher の USB でつながったカードの downloads に入り、SD の downloads から Install します。攻撃向けのファームは入れていません。
+          ネットがあるとき、M5Burner の公開一覧から無印 Cardputer 向けを表示します。気になったものは「オフライン用に保管」でこの PC に残し、保管タブから選んでカードへ送ります。緑の枠はカードと一致、オレンジの枠は新しい版があります。攻撃向けのファームは入れていません。
         </p>
       </div>
       {!online && (
@@ -150,6 +154,7 @@ export function ProjectBrowser({
                 key={project.id}
                 project={project}
                 saved={saved.find((item) => item.id === project.id) ?? null}
+                tone={cardState[project.id] ?? "absent"}
                 busy={busyId === project.id}
                 error={errors[project.id] ?? ""}
                 onSave={() => onSave(project.id)}
@@ -170,12 +175,14 @@ export function ProjectBrowser({
 function ProjectTile({
   project,
   saved,
+  tone,
   busy,
   error,
   onSave,
 }: {
   project: ProjectCard
   saved: SavedBrief | null
+  tone: CardTone
   busy: boolean
   error: string
   onSave: () => void
@@ -187,7 +194,7 @@ function ProjectTile({
   else if (newer) saveLabel = "新しい版を保管"
   else if (saved) saveLabel = "もう一度保管"
   return (
-    <Card className="overflow-hidden">
+    <Card className={cn("overflow-hidden border-l-4", tone === "absent" ? "" : cardToneClass(tone))}>
       <ProjectCover file={project.cover} name={project.name} />
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
@@ -205,11 +212,8 @@ function ProjectTile({
           </span>
           {project.version && <span>版 {project.version}</span>}
           {saved && <Badge variant="secondary">保管済み {saved.version}</Badge>}
-          <span>SD から Install</span>
+          {tone !== "absent" && <Badge variant="outline">{cardToneLabel(tone)}</Badge>}
         </div>
-        <p className="text-xs leading-5 text-muted-foreground">
-          SD のファイル名はプロジェクト名です。Launcher の SD で downloads を開き、その名前を選んで Install します。
-        </p>
         {error && <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm leading-6 text-destructive">{error}</p>}
       </CardContent>
       <CardFooter className="flex flex-wrap gap-2">

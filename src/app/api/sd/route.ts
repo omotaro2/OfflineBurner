@@ -1,5 +1,5 @@
 import path from "node:path"
-import { copySavedToDownloads, listLauncherDrives, readDownloads } from "@/lib/sd-drive"
+import { copySavedToDownloads, deleteFromDownloads, listLauncherDrives, readDownloads } from "@/lib/sd-drive"
 import { DOWNLOADS_DIR, explainWriteError } from "@/lib/sd-volume"
 import { NextResponse } from "next/server"
 
@@ -45,13 +45,36 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as { device?: unknown; ids?: unknown } | null
+  const body = (await request.json().catch(() => null)) as {
+    action?: unknown
+    device?: unknown
+    ids?: unknown
+    filenames?: unknown
+  } | null
   const device = typeof body?.device === "string" ? body.device : ""
-  const ids = Array.isArray(body?.ids) ? body.ids.filter((id): id is string => typeof id === "string") : []
   if (!device) {
     return NextResponse.json({ error: NOT_VISIBLE }, { status: 400 })
   }
   try {
+    if (body?.action === "delete") {
+      const filenames = Array.isArray(body.filenames)
+        ? body.filenames.filter((name): name is string => typeof name === "string")
+        : []
+      const result = await deleteFromDownloads(device, filenames)
+      return NextResponse.json({
+        removed: result.removed,
+        device: result.drive.device,
+        mount: result.drive.mount,
+        files: result.files,
+        sizes: result.sizes,
+        folder: path.posix.join("/", DOWNLOADS_DIR),
+        message:
+          result.removed === 0
+            ? "消す対象はすでにありません。"
+            : `${result.removed} 件を downloads から削除しました。`,
+      })
+    }
+    const ids = Array.isArray(body?.ids) ? body.ids.filter((id): id is string => typeof id === "string") : []
     const result = await copySavedToDownloads(device, ids)
     return NextResponse.json({
       written: result.written,

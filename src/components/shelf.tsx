@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { ProjectDesk } from "@/components/project-desk"
+import { cn } from "cn"
 import type { CachedFirmware, CachedPart } from "@/lib/cache"
 import type { ConnectMode } from "@/lib/shelf"
 import { Download, RefreshCw, Star, TriangleAlert, Usb } from "lucide-react"
@@ -70,6 +71,7 @@ export function Shelf() {
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [deviceId, setDeviceId] = useState("cardputer-adv")
+  const [work, setWork] = useState<WorkTab>("shelf")
   const [busyId, setBusyId] = useState<string | null>(null)
   const [cardError, setCardError] = useState<Record<string, string>>({})
   const [target, setTarget] = useState<FirmwareCard | null>(null)
@@ -235,7 +237,7 @@ export function Shelf() {
           <p className="text-xs tracking-[0.18em] text-muted-foreground uppercase">Field shelf</p>
           <h1 className="text-2xl font-semibold tracking-tight">フィールドシェルフ</h1>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            家のネットで安定版を保管し、出先ではそのファイルだけを基板へ書きます。ブラウザのタブはこのページだけにしてください。
+            家のネットで安定版を保管し、出先ではそのファイルだけを基板へ書きます。Cardputer は安定版、プロジェクト、保管、カードのタブに分かれています。シリアルで書くときは、ブラウザのタブはこのページだけにしてください。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -282,48 +284,71 @@ export function Shelf() {
               </Button>
             ))}
           </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>{device.name}</CardTitle>
-              <CardDescription>{device.portHint}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="flex list-disc flex-col gap-1 pl-5 text-sm leading-6 text-muted-foreground">
-                {device.prep.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-          <div className="grid gap-4">
-            {device.firmwares.map((firmware) => (
-              <FirmwareRow
-                key={firmware.id}
-                firmware={firmware}
-                busy={busyId === firmware.id}
-                error={cardError[firmware.id] ?? ""}
-                online={catalog?.online ?? false}
-                onSave={() => void saveOne(firmware.id)}
-                onFlash={() => openFlash(firmware)}
-              />
-            ))}
-          </div>
-          {(device.id === "cardputer" || device.id === "cardputer-adv") && catalog?.recovery && (
-            <FirmwareRow
-              firmware={catalog.recovery}
-              busy={busyId === catalog.recovery.id}
-              error={cardError[catalog.recovery.id] ?? ""}
-              online={catalog.online}
-              onSave={() => {
-                if (catalog.recovery) void saveOne(catalog.recovery.id)
-              }}
-              onFlash={() => {
-                if (catalog.recovery) openFlash(catalog.recovery)
-              }}
-            />
+          {cardputerDevice(device.id) && (
+            <div role="tablist" aria-label="機能" className="flex gap-1 overflow-x-auto rounded-xl bg-muted p-1">
+              {WORK_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={work === tab.id}
+                  className={cn(
+                    "h-11 shrink-0 rounded-lg px-4 text-sm font-medium",
+                    work === tab.id ? "bg-background text-foreground" : "text-muted-foreground",
+                  )}
+                  onClick={() => setWork(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           )}
-          {(device.id === "cardputer" || device.id === "cardputer-adv") && (
-            <ProjectDesk online={catalog?.online ?? false} />
+          {(!cardputerDevice(device.id) || work === "shelf") && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>{device.name}</CardTitle>
+                  <CardDescription>{device.portHint}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="flex list-disc flex-col gap-1 pl-5 text-sm leading-6 text-muted-foreground">
+                    {device.prep.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+              <div className="grid gap-4">
+                {device.firmwares.map((firmware) => (
+                  <FirmwareRow
+                    key={firmware.id}
+                    firmware={firmware}
+                    busy={busyId === firmware.id}
+                    error={cardError[firmware.id] ?? ""}
+                    online={catalog?.online ?? false}
+                    onSave={() => void saveOne(firmware.id)}
+                    onFlash={() => openFlash(firmware)}
+                  />
+                ))}
+              </div>
+              {cardputerDevice(device.id) && catalog?.recovery && (
+                <FirmwareRow
+                  firmware={catalog.recovery}
+                  busy={busyId === catalog.recovery.id}
+                  error={cardError[catalog.recovery.id] ?? ""}
+                  online={catalog.online}
+                  onSave={() => {
+                    if (catalog.recovery) void saveOne(catalog.recovery.id)
+                  }}
+                  onFlash={() => {
+                    if (catalog.recovery) openFlash(catalog.recovery)
+                  }}
+                />
+              )}
+            </>
+          )}
+          {cardputerDevice(device.id) && work !== "shelf" && (
+            <ProjectDesk online={catalog?.online ?? false} panel={work} />
           )}
         </div>
       )}
@@ -400,6 +425,19 @@ export function Shelf() {
       </Dialog>
     </main>
   )
+}
+
+const WORK_TABS = [
+  { id: "shelf", label: "安定版" },
+  { id: "projects", label: "プロジェクト" },
+  { id: "saved", label: "保管" },
+  { id: "card", label: "カード" },
+] as const
+
+type WorkTab = (typeof WORK_TABS)[number]["id"]
+
+function cardputerDevice(id: string): boolean {
+  return id === "cardputer" || id === "cardputer-adv"
 }
 
 function FirmwareRow({

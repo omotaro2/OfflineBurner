@@ -25,6 +25,16 @@ export function isSdFilename(filename: string): boolean {
   return /^[^\\/:*?"<>|\u0000-\u001f.][^\\/:*?"<>|\u0000-\u001f]{0,78}\.bin$/i.test(filename)
 }
 
+export function binNamesToDelete(names: string[]): string[] {
+  const unique = [...new Set(names)]
+  if (unique.length === 0) throw new Error("削除するファイルがありません。")
+  if (unique.length > 80) throw new Error("一度に消せるのは 80 件までです。")
+  for (const name of unique) {
+    if (!isSdFilename(name)) throw new Error("削除できない名前です。")
+  }
+  return unique
+}
+
 export function parseManifest(text: string): CardManifest {
   let body: unknown
   try {

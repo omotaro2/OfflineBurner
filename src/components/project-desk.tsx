@@ -1,23 +1,21 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { ProjectBrowser, type SavedBrief } from "@/components/project-browser"
+import { ProjectBrowser } from "@/components/project-browser"
+import { SavedWrite } from "@/components/saved-write"
 import { SdCard } from "@/components/sd-card"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-
-type SavedProject = SavedBrief & {
-  name: string
-  author: string
-  bytes: number
-  sha256: string
-  savedAt: string
-}
+import { useLauncherCard, type SavedFile } from "@/components/use-launcher-card"
 
 type RemoteBrief = { id: string; version: string; publishedAt: string }
 
-export function ProjectDesk({ online }: { online: boolean }) {
-  const [saved, setSaved] = useState<SavedProject[]>([])
+export function ProjectDesk({
+  online,
+  panel,
+}: {
+  online: boolean
+  panel: "projects" | "saved" | "card"
+}) {
+  const [saved, setSaved] = useState<SavedFile[]>([])
   const [remote, setRemote] = useState<RemoteBrief[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -25,7 +23,7 @@ export function ProjectDesk({ online }: { online: boolean }) {
   const loadSaved = useCallback(async () => {
     const response = await fetch("/api/projects/saved", { cache: "no-store" })
     if (!response.ok) return
-    const body = (await response.json()) as { saved?: SavedProject[] }
+    const body = (await response.json()) as { saved?: SavedFile[] }
     setSaved(body.saved ?? [])
   }, [])
 
@@ -76,59 +74,23 @@ export function ProjectDesk({ online }: { online: boolean }) {
     [loadSaved],
   )
 
+  const card = useLauncherCard({
+    online,
+    saved,
+    remote,
+    onEnsure: save,
+  })
+
+  if (panel === "saved") return <SavedWrite card={card} saved={saved} />
+  if (panel === "card") return <SdCard card={card} />
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">保管したプロジェクト</h2>
-        {saved.length === 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>まだありません</CardTitle>
-              <CardDescription>
-                下の一覧でプロジェクトを開き、オフライン用に保管します。Launcher の USB で downloads へ送ると、Install で入れられます。
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        ) : (
-          <div className="grid gap-3">
-            {saved.map((item) => (
-              <Card key={item.id}>
-                <CardHeader>
-                  <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                    {item.name}
-                    <Badge>SD から Install</Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    {item.version || "版不明"}（{formatBytes(item.bytes)}、{item.savedAt.slice(0, 16).replace("T", " ")}）
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <SdCard
-        online={online}
-        saved={saved}
-        remote={remote}
-        onEnsure={async (id) => {
-          await save(id)
-        }}
-      />
-
-      <ProjectBrowser
-        online={online}
-        saved={saved}
-        busyId={busyId}
-        errors={errors}
-        onSave={(id) => void save(id).catch(() => undefined)}
-      />
-    </div>
+    <ProjectBrowser
+      online={online}
+      saved={saved}
+      busyId={busyId}
+      errors={errors}
+      cardState={card.stateById}
+      onSave={(id) => void save(id).catch(() => undefined)}
+    />
   )
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
