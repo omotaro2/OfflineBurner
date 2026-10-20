@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { freshness, filenameFor, parseManifest, serializeManifest, upsertEntry } from "./sd-manifest.ts"
+import { freshness, filenameFor, isSdFilename, parseManifest, serializeManifest, upsertEntry } from "./sd-manifest.ts"
 
 const entry = {
   id: "4098f31c0a06c447e82b36261466ddd1",
@@ -33,4 +33,6 @@ test("upsert replaces the same project", () => {
   assert.equal(next.files.length, 1)
   assert.equal(next.files[0]?.version, "0.2")
   assert.equal(filenameFor(entry.id), entry.filename)
+  assert.equal(isSdFilename("Doom 1.2.bin"), true)
+  assert.equal(isSdFilename("../Doom.bin"), false)
 })

@@ -42,6 +42,7 @@ type FirmwareCard = {
   cautions: string[]
   chip: "ESP32-S3"
   connect: ConnectMode
+  writesDevice: boolean
   cached: CachedFirmware | null
   remote: RemoteRelease | null
   remoteError: string | null
@@ -59,6 +60,7 @@ type DeviceCard = {
 type Catalog = {
   online: boolean
   checkedAt: string
+  recovery: FirmwareCard | null
   devices: DeviceCard[]
 }
 
@@ -306,6 +308,20 @@ export function Shelf() {
               />
             ))}
           </div>
+          {(device.id === "cardputer" || device.id === "cardputer-adv") && catalog?.recovery && (
+            <FirmwareRow
+              firmware={catalog.recovery}
+              busy={busyId === catalog.recovery.id}
+              error={cardError[catalog.recovery.id] ?? ""}
+              online={catalog.online}
+              onSave={() => {
+                if (catalog.recovery) void saveOne(catalog.recovery.id)
+              }}
+              onFlash={() => {
+                if (catalog.recovery) openFlash(catalog.recovery)
+              }}
+            />
+          )}
           {(device.id === "cardputer" || device.id === "cardputer-adv") && (
             <ProjectDesk online={catalog?.online ?? false} />
           )}
@@ -450,10 +466,12 @@ function FirmwareRow({
           {busy ? <RefreshCw className="animate-spin" /> : <Download />}
           {busy ? "保管しています" : action}
         </Button>
-        <Button className="h-11" disabled={!cached || busy} onClick={onFlash}>
-          <Usb />
-          オフラインで書き込む
-        </Button>
+        {firmware.writesDevice && (
+          <Button className="h-11" disabled={!cached || busy} onClick={onFlash}>
+            <Usb />
+            {firmware.id === "m5launcher-cardputer" ? "復旧用に書き込む" : "オフラインで書き込む"}
+          </Button>
+        )}
       </CardFooter>
     </Card>
   )

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { uniqueSdFilename } from "@/lib/launcher-payload"
 import {
-  filenameFor,
   freshness,
   parseManifest,
   serializeManifest,
@@ -143,7 +143,7 @@ export function SdCard({
           <li>無印または Adv に microSD を挿し、USB ケーブルでこの PC とつなぐ。</li>
           <li>Launcher を開き、メニューの USB を選ぶ。挿さったカードが PC のドライブになる。</li>
           <li>「無印 / Adv の SD を開く」で、そのドライブを選ぶ。</li>
-          <li>保管した bin を送る。送り終わったら USB を終了し、Launcher の SD から field-shelf を開いて Install する。</li>
+          <li>保管した bin を送る。ファイル名はプロジェクト名です。USB を終了し、Launcher の SD でその名前を選んで Install します。</li>
         </ol>
       </div>
       {!picker && (
@@ -237,10 +237,23 @@ async function readShelf(root: DirectoryHandle): Promise<{ manifest: CardManifes
 
 async function writeSaved(root: DirectoryHandle, manifest: CardManifest, item: SavedFile): Promise<CardManifest> {
   const response = await fetch(`/api/projects/${item.id}/file`, { cache: "no-store" })
-  if (!response.ok) throw new Error(`${item.name} の保管を読めません`)
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error ?? `${item.name} の保管を読めません`)
+  }
   const data = new Uint8Array(await response.arrayBuffer())
+  const previous = manifest.files.find((entry) => entry.id === item.id)
+  const filename = uniqueSdFilename(
+    item.name,
+    item.version,
+    item.id,
+    manifest.files.filter((entry) => entry.id !== item.id).map((entry) => entry.filename),
+  )
   const directory = await root.getDirectoryHandle("field-shelf", { create: true })
-  const handle = await directory.getFileHandle(filenameFor(item.id), { create: true })
+  if (previous && previous.filename !== filename) {
+    await directory.removeEntry(previous.filename).catch(() => undefined)
+  }
+  const handle = await directory.getFileHandle(filename, { create: true })
   const writable = await handle.createWritable()
   await writable.write(new Blob([data]))
   await writable.close()
@@ -249,7 +262,7 @@ async function writeSaved(root: DirectoryHandle, manifest: CardManifest, item: S
     name: item.name,
     version: item.version,
     publishedAt: item.publishedAt,
-    filename: filenameFor(item.id),
+    filename,
     bytes: data.byteLength,
     sha256: item.sha256,
     kind: item.kind,

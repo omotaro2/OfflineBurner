@@ -21,6 +21,10 @@ export function filenameFor(id: string): string {
   return `${id}.bin`
 }
 
+export function isSdFilename(filename: string): boolean {
+  return /^[^\\/:*?"<>|\u0000-\u001f.][^\\/:*?"<>|\u0000-\u001f]{0,78}\.bin$/i.test(filename)
+}
+
 export function parseManifest(text: string): CardManifest {
   let body: unknown
   try {
@@ -68,7 +72,7 @@ function asEntry(input: unknown): CardEntry | null {
   if (!input || typeof input !== "object") return null
   const raw = input as Partial<CardEntry>
   if (typeof raw.id !== "string" || !/^[\w-]{6,80}$/.test(raw.id)) return null
-  if (raw.filename !== filenameFor(raw.id)) return null
+  if (typeof raw.filename !== "string" || !isSdFilename(raw.filename)) return null
   if (raw.kind !== "merged" && raw.kind !== "app") return null
   if (typeof raw.bytes !== "number" || raw.bytes <= 0) return null
   return {

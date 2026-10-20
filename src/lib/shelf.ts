@@ -33,6 +33,8 @@ export type FirmwareInfo = {
   flashFreq: "80m"
   connect: ConnectMode
   eraseAll: true
+  writesDevice: boolean
+  listed: boolean
 }
 
 export type ResolvedImage = RemoteRelease & {
@@ -98,6 +100,8 @@ const meshtasticHeltec: ShelfItem = {
   flashFreq: "80m",
   connect: "default_reset",
   eraseAll: true,
+  writesDevice: true,
+  listed: true,
   probe: probeMeshtasticHeltec,
   download: downloadMeshtasticHeltec,
 }
@@ -107,17 +111,16 @@ const meshtasticAdv: ShelfItem = {
   deviceId: "cardputer-adv",
   name: "Meshtastic ADV",
   summary:
-    "Cardputer Adv のキーボードから使う Meshtastic 端末です。フォント入りの merged イメージを先頭から書きます。キャップが無くても、既存ノードと BLE でペアリングできます。",
-  cautions: [
-    "M5Launcher のアプリ枠ではなく、フラッシュ先頭への全書き込みです。",
-    "設定と端末内の履歴は消えます。",
-  ],
+    "Cardputer Adv のキーボードから使う Meshtastic 端末です。Launcher を消して上書きはしないので、この棚からは書き込みません。",
+  cautions: ["安定版の確認と保管だけです。基板への書き込みはしません。"],
   chip: "ESP32-S3",
   flashSize: "8MB",
   flashMode: "dio",
   flashFreq: "80m",
   connect: "no_reset",
   eraseAll: true,
+  writesDevice: false,
+  listed: true,
   probe: probeMeshtasticAdv,
   download: downloadMeshtasticAdv,
 }
@@ -127,10 +130,10 @@ const ratspeak: ShelfItem = {
   deviceId: "cardputer-adv",
   name: "Ratspeak",
   summary:
-    "起動時に Standalone と RNode を選ぶ full イメージです。LoRa で送受信するには Cap LoRa-1262 が必要です。",
+    "起動時に Standalone と RNode を選ぶ full イメージです。Launcher を消して上書きはしないので、この棚からは書き込みません。",
   cautions: [
-    "設定と端末内の履歴は消えます。",
-    "Cap LoRa-1262 の技適は 922.0〜923.4 MHz、空中線電力 1.5〜5.0 mW です。EU868 や US915、+22 dBm のままでは使いません。",
+    "安定版の確認と保管だけです。基板への書き込みはしません。",
+    "Cap LoRa-1262 の技適は 922.0〜923.4 MHz、空中線電力 1.5〜5.0 mW です。",
   ],
   chip: "ESP32-S3",
   flashSize: "8MB",
@@ -138,11 +141,35 @@ const ratspeak: ShelfItem = {
   flashFreq: "80m",
   connect: "no_reset",
   eraseAll: true,
+  writesDevice: false,
+  listed: true,
   probe: probeRatspeak,
   download: downloadRatspeak,
 }
 
-export const shelf: ShelfItem[] = [meshtasticAdv, ratspeak, meshtasticHeltec]
+const launcher: ShelfItem = {
+  id: "m5launcher-cardputer",
+  deviceId: "cardputer",
+  name: "M5Launcher（復旧）",
+  summary:
+    "無印と Adv 共通の公式 Launcher です。ふだんのアプリは SD の Install で入れ、この書き込みは Launcher が消えたときだけ使います。",
+  cautions: [
+    "今入っている Launcher と、そこから入れたアプリは消えます。",
+    "無印と Adv は同じ Launcher-m5stack-cardputer.bin です。",
+  ],
+  chip: "ESP32-S3",
+  flashSize: "8MB",
+  flashMode: "dio",
+  flashFreq: "80m",
+  connect: "no_reset",
+  eraseAll: true,
+  writesDevice: true,
+  listed: false,
+  probe: probeLauncher,
+  download: downloadLauncher,
+}
+
+export const shelf: ShelfItem[] = [launcher, meshtasticAdv, ratspeak, meshtasticHeltec]
 
 export function findShelfItem(id: string): ShelfItem | undefined {
   return shelf.find((item) => item.id === id)
@@ -200,6 +227,29 @@ async function coverFrom(remote: RemoteRelease): Promise<ResolvedImage["cover"]>
     }
   } catch {
     return null
+  }
+}
+
+async function probeLauncher(): Promise<RemoteRelease> {
+  const release = await latestStable("bmorcelli/Launcher")
+  return describeRelease(
+    "bmorcelli/Launcher",
+    release,
+    downloadsForAsset(release, "Launcher-m5stack-cardputer.bin"),
+    "Cardputer 用 Launcher のダウンロード回数です。",
+    CARDPUTER_THUMB,
+  )
+}
+
+async function downloadLauncher(): Promise<ResolvedImage> {
+  const remote = await probeLauncher()
+  const data = await downloadBytes(
+    `https://github.com/bmorcelli/Launcher/releases/download/${remote.version}/Launcher-m5stack-cardputer.bin`,
+  )
+  return {
+    ...remote,
+    cover: await coverFrom(remote),
+    parts: [{ label: "Launcher-m5stack-cardputer.bin", offset: 0, data }],
   }
 }
 

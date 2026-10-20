@@ -22,39 +22,39 @@ export async function GET() {
   const probeById = new Map(probes.map((probe) => [probe.id, probe]))
   const online = probes.some((probe) => probe.remote)
 
+  const present = (item: (typeof shelf)[number]) => {
+    const probe = probeById.get(item.id)
+    const cached = caches[item.id] ?? null
+    return {
+      id: item.id,
+      deviceId: item.deviceId,
+      name: item.name,
+      summary: item.summary,
+      cautions: item.cautions,
+      chip: item.chip,
+      flashSize: item.flashSize,
+      flashMode: item.flashMode,
+      flashFreq: item.flashFreq,
+      connect: item.connect,
+      eraseAll: item.eraseAll,
+      writesDevice: item.writesDevice,
+      cached,
+      remote: probe?.remote ?? null,
+      remoteError: probe?.error ?? null,
+      updateAvailable: Boolean(cached && probe?.remote && cached.version !== probe.remote.version),
+    }
+  }
+  const recovery = shelf.find((item) => item.id === "m5launcher-cardputer")
+
   return NextResponse.json({
     online,
     checkedAt: new Date().toISOString(),
+    recovery: recovery ? present(recovery) : null,
     devices: devices.map((device) => ({
       ...device,
       firmwares: shelf
-        .filter((item) => item.deviceId === device.id)
-        .map((item) => {
-          const probe = probeById.get(item.id)
-          const cached = caches[item.id] ?? null
-          const info = {
-            id: item.id,
-            deviceId: item.deviceId,
-            name: item.name,
-            summary: item.summary,
-            cautions: item.cautions,
-            chip: item.chip,
-            flashSize: item.flashSize,
-            flashMode: item.flashMode,
-            flashFreq: item.flashFreq,
-            connect: item.connect,
-            eraseAll: item.eraseAll,
-          }
-          return {
-            ...info,
-            cached,
-            remote: probe?.remote ?? null,
-            remoteError: probe?.error ?? null,
-            updateAvailable: Boolean(
-              cached && probe?.remote && cached.version !== probe.remote.version,
-            ),
-          }
-        }),
+        .filter((item) => item.listed && item.deviceId === device.id)
+        .map((item) => present(item)),
     })),
   })
 }

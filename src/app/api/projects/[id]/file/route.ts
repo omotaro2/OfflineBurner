@@ -1,3 +1,4 @@
+import { launcherSdImage } from "@/lib/launcher-payload"
 import { readSavedBin } from "@/lib/project-store"
 import { NextResponse } from "next/server"
 
@@ -9,7 +10,7 @@ export async function GET(
 ) {
   const { id } = await context.params
   try {
-    const data = await readSavedBin(id)
+    const data = launcherSdImage(await readSavedBin(id))
     return new NextResponse(new Blob([new Uint8Array(data)]), {
       headers: {
         "Content-Type": "application/octet-stream",
@@ -18,6 +19,7 @@ export async function GET(
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "保管が見つかりません"
-    return NextResponse.json({ error: message }, { status: 404 })
+    const status = message === "保管が見つかりません" ? 404 : 400
+    return NextResponse.json({ error: message }, { status })
   }
 }
