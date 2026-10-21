@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/snap/bin:${PATH:-}"
 
 if [ -s "${HOME}/.nvm/nvm.sh" ]; then
   # shellcheck disable=SC1091
@@ -47,10 +47,15 @@ if ! curl -fsS --max-time 2 -o /dev/null "$URL"; then
   fi
 fi
 
-if command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "$URL" >/dev/null 2>&1 || true
-elif command -v sensible-browser >/dev/null 2>&1; then
-  sensible-browser "$URL" >/dev/null 2>&1 || true
-else
-  notify "ブラウザを開けませんでした。${URL} を Chromium で開いてください。"
+browser=""
+for candidate in chromium chromium-browser google-chrome google-chrome-stable; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    browser="$candidate"
+    break
+  fi
+done
+if [ -z "$browser" ]; then
+  notify "Chromium が見つかりません。sudo apt install chromium のあと、もう一度アイコンを開いてください。"
+  exit 1
 fi
+nohup "$browser" "$URL" >/dev/null 2>&1 &
