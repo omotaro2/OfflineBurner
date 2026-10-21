@@ -78,9 +78,9 @@ export function ProjectBrowser({
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">Cardputer（無印）のプロジェクト</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Cardputer Adv のプロジェクト</h2>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          ネットがあるとき、M5Burner の公開一覧から無印 Cardputer 向けを表示します。気になったものは「オフライン用に保管」でこの PC に残し、保管タブから選んでカードへ送ります。緑の枠はカードと一致、オレンジの枠は新しい版があります。攻撃向けのファームは入れていません。
+          ネットがあるとき、M5Burner の公開一覧から Cardputer Adv 向けだけを表示します。名前や説明が無印専用のものは出しません。GitHub のリリースに無印用と Adv 用の bin が両方あるときは、Adv 用だけを保管します。気になったものは「オフライン用に保管」でこの PC に残し、保管タブから選んでカードへ送ります。緑の枠はカードと一致、オレンジの枠は新しい版があります。攻撃向けのファームは入れていません。
         </p>
       </div>
       {!online && (

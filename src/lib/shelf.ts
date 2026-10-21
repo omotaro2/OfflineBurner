@@ -1,4 +1,5 @@
 import { unzipSync } from "fflate"
+import { chooseCardputerAsset } from "./adv-target"
 import {
   downloadBytes,
   downloadsForAsset,
@@ -49,17 +50,6 @@ export type ShelfItem = FirmwareInfo & {
 
 export const devices: DeviceInfo[] = [
   {
-    id: "cardputer",
-    name: "Cardputer（無印）",
-    portHint: "USB JTAG/serial（Linux では /dev/ttyACM0）",
-    prep: [
-      "側面の電源スイッチを OFF にする。",
-      "StampS3 の G0 を押したまま USB を挿し、1〜2 秒後に離す。",
-      "無印向けの bin は Cardputer Adv でも使えます。Adv に書くときも G0 の手順は同じです。",
-      "SD へ送るときは、Launcher のメニューで USB を選んだまま、この PC とつなぎます。bin はカードの downloads に入ります。",
-    ],
-  },
-  {
     id: "cardputer-adv",
     name: "Cardputer Adv",
     portHint: "USB JTAG/serial（Linux では /dev/ttyACM0）",
@@ -68,7 +58,8 @@ export const devices: DeviceInfo[] = [
       "G0 を押したまま USB を挿し、1〜2 秒後に離す。",
       "書き終わって充電に戻すときは、スイッチを ON にする。",
       "Cap LoRa-1262 を載せるときは、起動前にアンテナを付ける。",
-      "無印向けのプロジェクトも、この基板の SD と書き込みで使えます。",
+      "プロジェクトは Cardputer Adv 向けだけを出します。無印専用の bin は取りません。",
+      "SD へ送るときは、Launcher のメニューで USB を選んだまま、この PC とつなぎます。bin はカードの downloads に入ります。",
     ],
   },
   {
@@ -149,13 +140,13 @@ const ratspeak: ShelfItem = {
 
 const launcher: ShelfItem = {
   id: "m5launcher-cardputer",
-  deviceId: "cardputer",
+  deviceId: "cardputer-adv",
   name: "M5Launcher（復旧）",
   summary:
-    "無印と Adv 共通の公式 Launcher です。ふだんのアプリは SD の Install で入れ、この書き込みは Launcher が消えたときだけ使います。",
+    "Cardputer Adv 向けの公式 Launcher です。ふだんのアプリは SD の Install で入れ、この書き込みは Launcher が消えたときだけ使います。",
   cautions: [
     "今入っている Launcher と、そこから入れたアプリは消えます。",
-    "無印と Adv は同じ Launcher-m5stack-cardputer.bin です。",
+    "公式の Launcher-m5stack-cardputer.bin を書きます。",
   ],
   chip: "ESP32-S3",
   flashSize: "8MB",
@@ -170,6 +161,16 @@ const launcher: ShelfItem = {
 }
 
 export const shelf: ShelfItem[] = [launcher, meshtasticAdv, ratspeak, meshtasticHeltec]
+
+function releaseAsset(release: GithubRelease, preferred: string) {
+  const name = chooseCardputerAsset(
+    release.assets.map((item) => item.name),
+    preferred,
+  )
+  const asset = release.assets.find((item) => item.name === name)
+  if (!asset) throw new Error(`リリースに ${preferred} がありません`)
+  return asset
+}
 
 export function findShelfItem(id: string): ShelfItem | undefined {
   return shelf.find((item) => item.id === id)
@@ -289,10 +290,11 @@ async function downloadMeshtasticHeltec(): Promise<ResolvedImage> {
 async function probeMeshtasticAdv(): Promise<RemoteRelease> {
   const release = await latestStable("anton-vinogradov/meshtastic-adv")
   const version = versionFromTag(release.tag_name)
+  const asset = releaseAsset(release, "meshtastic-adv-cardputer-adv-merged.bin")
   return describeRelease(
     "anton-vinogradov/meshtastic-adv",
     release,
-    downloadsForAsset(release, "meshtastic-adv-cardputer-adv-merged.bin"),
+    asset.download_count,
     "merged イメージのダウンロード回数です。",
     {
       url: `https://github.com/anton-vinogradov/meshtastic-adv/releases/download/v${version}/meshtastic-adv-hero.gif`,
@@ -303,9 +305,9 @@ async function probeMeshtasticAdv(): Promise<RemoteRelease> {
 
 async function downloadMeshtasticAdv(): Promise<ResolvedImage> {
   const remote = await probeMeshtasticAdv()
-  const data = await downloadBytes(
-    `https://github.com/anton-vinogradov/meshtastic-adv/releases/download/v${remote.version}/meshtastic-adv-cardputer-adv-merged.bin`,
-  )
+  const release = await latestStable("anton-vinogradov/meshtastic-adv")
+  const asset = releaseAsset(release, "meshtastic-adv-cardputer-adv-merged.bin")
+  const data = await downloadBytes(asset.browser_download_url)
   return {
     ...remote,
     cover: await coverFrom(remote),
@@ -315,10 +317,11 @@ async function downloadMeshtasticAdv(): Promise<ResolvedImage> {
 
 async function probeRatspeak(): Promise<RemoteRelease> {
   const release = await latestStable("ratspeak/rsCardputer")
+  const asset = releaseAsset(release, "rscardputer-full.zip")
   return describeRelease(
     "ratspeak/rsCardputer",
     release,
-    downloadsForAsset(release, "rscardputer-full.zip"),
+    asset.download_count,
     "full パッケージのダウンロード回数です。",
     CARDPUTER_THUMB,
   )
@@ -326,9 +329,9 @@ async function probeRatspeak(): Promise<RemoteRelease> {
 
 async function downloadRatspeak(): Promise<ResolvedImage> {
   const remote = await probeRatspeak()
-  const zip = await downloadBytes(
-    `https://github.com/ratspeak/rsCardputer/releases/download/v${remote.version}/rscardputer-full.zip`,
-  )
+  const release = await latestStable("ratspeak/rsCardputer")
+  const asset = releaseAsset(release, "rscardputer-full.zip")
+  const zip = await downloadBytes(asset.browser_download_url)
   return {
     ...remote,
     cover: await coverFrom(remote),

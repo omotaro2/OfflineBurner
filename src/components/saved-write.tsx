@@ -1,12 +1,15 @@
 "use client"
 
+import Image from "next/image"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { CheckRow, StatusLegend, type CardTone } from "@/components/card-tone"
+import { StatusLegend, cardToneClass, cardToneLabel, type CardTone } from "@/components/card-tone"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DriveBar } from "@/components/sd-card"
 import type { LauncherCard, SavedFile } from "@/components/use-launcher-card"
 import type { Freshness } from "@/lib/sd-manifest"
+import { cn } from "cn"
 import { RefreshCw, Usb } from "lucide-react"
 
 const RANK: Record<CardTone, number> = {
@@ -18,7 +21,15 @@ const RANK: Record<CardTone, number> = {
   foreign: 5,
 }
 
-export function SavedWrite({ card, saved }: { card: LauncherCard; saved: SavedFile[] }) {
+export function SavedWrite({
+  card,
+  saved,
+  hiddenPlain,
+}: {
+  card: LauncherCard
+  saved: SavedFile[]
+  hiddenPlain: number
+}) {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const master = useRef<HTMLInputElement>(null)
   const ids = useMemo(() => saved.map((item) => item.id), [saved])
@@ -53,8 +64,13 @@ export function SavedWrite({ card, saved }: { card: LauncherCard; saved: SavedFi
       <div className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold tracking-tight">保管からカードへ</h2>
         <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-          チェックした保管だけを、Launcher の USB でつながったカードの downloads へ送ります。緑はすでに同じ版があり、オレンジは送り直すと新しい版になります。
+          チェックした保管だけを、Launcher の USB でつながったカードの downloads へ送ります。緑はすでに同じ版があり、オレンジは送り直すと新しい版になります。サムネイルと説明は、プロジェクト一覧と同じものを出します。
         </p>
+        {hiddenPlain > 0 && (
+          <p className="text-sm leading-6 text-muted-foreground">
+            無印向けとして保管されていた {hiddenPlain} 件は、Adv の一覧から外しています。
+          </p>
+        )}
         <StatusLegend />
       </div>
       <DriveBar card={card} />
@@ -84,18 +100,16 @@ export function SavedWrite({ card, saved }: { card: LauncherCard; saved: SavedFi
               新しい版と欠けているものを選ぶ
             </Button>
           </div>
-          <div className="grid gap-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             {ordered.map((item) => {
               const tone = toneFor(card.stateById[item.id])
               return (
-                <CheckRow
+                <SavedCard
                   key={item.id}
+                  item={item}
+                  tone={tone}
                   checked={picked.has(item.id)}
                   disabled={card.busy}
-                  tone={tone}
-                  title={item.name}
-                  detail={`${item.version || "版不明"}（${formatBytes(item.bytes)}${item.savedAt ? `、${item.savedAt.slice(0, 16).replace("T", " ")}` : ""}）`}
-                  meta="チェックして downloads へ送ります。"
                   onChange={(checked) => {
                     setPicked((current) => {
                       const next = new Set(current)
@@ -125,6 +139,63 @@ export function SavedWrite({ card, saved }: { card: LauncherCard; saved: SavedFi
         </Button>
       </div>
     </section>
+  )
+}
+
+function SavedCard({
+  item,
+  tone,
+  checked,
+  disabled,
+  onChange,
+}: {
+  item: SavedFile
+  tone: CardTone
+  checked: boolean
+  disabled: boolean
+  onChange: (checked: boolean) => void
+}) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <label className={cn("overflow-hidden rounded-xl border border-l-4", cardToneClass(tone), disabled && "opacity-60")}>
+      <span className="relative block aspect-[16/9] bg-muted">
+        {failed ? (
+          <span className="flex size-full items-center justify-center text-xs text-muted-foreground">画像なし</span>
+        ) : (
+          <Image
+            src={`/api/projects/${item.id}/cover`}
+            alt={`${item.name} のサムネイル`}
+            fill
+            sizes="(min-width: 640px) 50vw, 100vw"
+            unoptimized
+            className="object-contain"
+            onError={() => setFailed(true)}
+          />
+        )}
+        <input
+          type="checkbox"
+          className="absolute top-3 left-3 size-5 accent-current"
+          checked={checked}
+          disabled={disabled}
+          aria-label={item.name}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+      </span>
+      <span className="flex flex-col gap-2 p-4">
+        <span className="flex flex-wrap items-center gap-2 text-base font-medium">
+          {item.name}
+          <Badge variant="outline">{cardToneLabel(tone)}</Badge>
+        </span>
+        {item.author && <span className="text-sm text-muted-foreground">{item.author}</span>}
+        {item.description && (
+          <span className="line-clamp-4 text-sm leading-6 text-muted-foreground">{item.description}</span>
+        )}
+        <span className="text-xs text-muted-foreground">
+          {item.version || "版不明"}（{formatBytes(item.bytes)}
+          {item.savedAt ? `、${item.savedAt.slice(0, 16).replace("T", " ")}` : ""}）
+        </span>
+      </span>
+    </label>
   )
 }
 

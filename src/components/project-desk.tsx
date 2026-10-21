@@ -16,6 +16,7 @@ export function ProjectDesk({
   panel: "projects" | "saved" | "card"
 }) {
   const [saved, setSaved] = useState<SavedFile[]>([])
+  const [hiddenPlain, setHiddenPlain] = useState(0)
   const [remote, setRemote] = useState<RemoteBrief[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -23,8 +24,9 @@ export function ProjectDesk({
   const loadSaved = useCallback(async () => {
     const response = await fetch("/api/projects/saved", { cache: "no-store" })
     if (!response.ok) return
-    const body = (await response.json()) as { saved?: SavedFile[] }
+    const body = (await response.json()) as { saved?: SavedFile[]; hiddenPlain?: number }
     setSaved(body.saved ?? [])
+    setHiddenPlain(body.hiddenPlain ?? 0)
   }, [])
 
   useEffect(() => {
@@ -81,7 +83,7 @@ export function ProjectDesk({
     onEnsure: save,
   })
 
-  if (panel === "saved") return <SavedWrite card={card} saved={saved} />
+  if (panel === "saved") return <SavedWrite card={card} saved={saved} hiddenPlain={hiddenPlain} />
   if (panel === "card") return <SdCard card={card} />
   return (
     <ProjectBrowser

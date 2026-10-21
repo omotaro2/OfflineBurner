@@ -8,8 +8,8 @@ function entry(overrides: Record<string, unknown>) {
   return {
     fid: "4098f31c0a06c447e82b36261466ddd1",
     category: "cardputer",
-    name: "Doom for Cardputer",
-    description: "A Doom port.",
+    name: "Doom for Cardputer ADV",
+    description: "A Doom port for Cardputer ADV.",
     author: "romalik",
     download: 10,
     cover,
@@ -19,10 +19,11 @@ function entry(overrides: Record<string, unknown>) {
   }
 }
 
-test("keeps ordinary Cardputer projects", () => {
+test("keeps Cardputer Adv projects", () => {
   const card = toProjectCard(entry({}))
   assert.ok(card)
-  assert.equal(card?.name, "Doom for Cardputer")
+  assert.equal(card?.name, "Doom for Cardputer ADV")
+  assert.equal(toProjectCard(entry({ name: "Doom for Cardputer", description: "A Doom port." })), null)
   assert.equal(card?.downloads, 10)
   assert.equal(card?.cover, cover)
   assert.equal(card?.version, "1.2.0")
@@ -48,7 +49,7 @@ test("keeps a setup page that only mentions a captive portal", () => {
   const card = toProjectCard(
     entry({
       name: "GeminiPuter",
-      description: "Connect to the GeminiPuter-Setup captive portal to set up Wi-Fi.",
+      description: "Connect to the GeminiPuter-Setup captive portal to set up Wi-Fi on Cardputer ADV.",
     }),
   )
   assert.equal(card?.name, "GeminiPuter")
@@ -79,7 +80,7 @@ test("inspectImage tells a merged card image from an app image", () => {
 })
 
 test("uses a Japanese description when one is supplied", () => {
-  const card = toProjectCard(entry({}), { "A Doom port.": "Doom の移植です。" })
+  const card = toProjectCard(entry({ description: "A Doom port." }), { "A Doom port.": "Doom の移植です。" })
   assert.equal(card?.description, "Doom の移植です。")
 })
 

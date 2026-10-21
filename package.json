@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0 --port 43127",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test src/lib/firmware.test.ts src/lib/projects.test.ts src/lib/sd-manifest.test.ts src/lib/launcher-payload.test.ts src/lib/sd-volume.test.ts src/lib/sd-write.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/firmware.test.ts src/lib/adv-target.test.ts src/lib/projects.test.ts src/lib/sd-manifest.test.ts src/lib/launcher-payload.test.ts src/lib/sd-volume.test.ts src/lib/sd-write.test.ts",
+    "shortcut": "bash scripts/install-desktop-shortcut.sh"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

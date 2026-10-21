@@ -6,6 +6,7 @@ import {
   downloadFirmware,
   findProject,
   inspectImage,
+  readProjectCover,
   type ImageKind,
 } from "./projects"
 
@@ -13,6 +14,9 @@ export type SavedProject = {
   id: string
   name: string
   author: string
+  description: string
+  cover: string | null
+  coverType: string
   version: string
   publishedAt: string
   bytes: number
@@ -43,9 +47,23 @@ export async function listSavedProjects(): Promise<SavedProject[]> {
 export async function readSavedProject(id: string): Promise<SavedProject | null> {
   try {
     const raw = await readFile(path.join(directoryFor(id), "meta.json"), "utf8")
-    const meta = JSON.parse(raw) as SavedProject
+    const meta = JSON.parse(raw) as Partial<SavedProject>
     if (meta.id !== id || (meta.kind !== "merged" && meta.kind !== "app")) return null
-    return meta
+    return {
+      id,
+      name: typeof meta.name === "string" ? meta.name : id,
+      author: typeof meta.author === "string" ? meta.author : "",
+      description: typeof meta.description === "string" ? meta.description : "",
+      cover: typeof meta.cover === "string" && meta.cover ? meta.cover : null,
+      coverType: typeof meta.coverType === "string" ? meta.coverType : "",
+      version: typeof meta.version === "string" ? meta.version : "",
+      publishedAt: typeof meta.publishedAt === "string" ? meta.publishedAt : "",
+      bytes: typeof meta.bytes === "number" ? meta.bytes : 0,
+      sha256: typeof meta.sha256 === "string" ? meta.sha256 : "",
+      kind: meta.kind,
+      savedAt: typeof meta.savedAt === "string" ? meta.savedAt : "",
+      firmwareFile: typeof meta.firmwareFile === "string" ? meta.firmwareFile : "",
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
     throw error
@@ -74,10 +92,14 @@ export async function saveProject(id: string): Promise<SavedProject> {
   await mkdir(staging, { recursive: true })
   try {
     await writeFile(path.join(staging, "image.bin"), data)
+    const cover = await cacheCover(staging, project.cover)
     const meta: SavedProject = {
       id,
       name: project.name,
       author: project.author,
+      description: project.description,
+      cover: cover.file,
+      coverType: cover.contentType,
       version: project.version,
       publishedAt: project.publishedAt,
       bytes: data.byteLength,
@@ -103,6 +125,59 @@ export async function saveProject(id: string): Promise<SavedProject> {
     await rm(staging, { recursive: true, force: true })
     throw error
   }
+}
+
+export async function readSavedCover(id: string): Promise<{ data: Uint8Array; contentType: string } | null> {
+  const meta = await readSavedProject(id)
+  if (!meta) return null
+  try {
+    const data = await readFile(path.join(directoryFor(id), "cover.bin"))
+    if (data.byteLength > 0 && data.byteLength <= 4 * 1024 * 1024) {
+      return { data, contentType: meta.coverType || contentTypeFor(meta.cover) }
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+  }
+  const file = meta.cover
+  if (file) {
+    try {
+      return await readProjectCover(file)
+    } catch {
+      return null
+    }
+  }
+  try {
+    const project = await findProject(id)
+    if (!project?.cover) return null
+    return await readProjectCover(project.cover)
+  } catch {
+    return null
+  }
+}
+
+async function cacheCover(
+  staging: string,
+  file: string | null,
+): Promise<{ file: string | null; contentType: string }> {
+  if (!file) return { file: null, contentType: "" }
+  try {
+    const image = await readProjectCover(file)
+    if (!image || image.data.byteLength === 0 || image.data.byteLength > 4 * 1024 * 1024) {
+      return { file, contentType: "" }
+    }
+    await writeFile(path.join(staging, "cover.bin"), image.data)
+    return { file, contentType: image.contentType }
+  } catch {
+    return { file, contentType: "" }
+  }
+}
+
+function contentTypeFor(file: string | null): string {
+  const extension = file?.split(".").pop()?.toLowerCase()
+  if (extension === "png") return "image/png"
+  if (extension === "webp") return "image/webp"
+  if (extension === "gif") return "image/gif"
+  return "image/jpeg"
 }
 
 function directoryFor(id: string): string {

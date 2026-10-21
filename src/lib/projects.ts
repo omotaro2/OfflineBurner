@@ -60,7 +60,7 @@ type RawFirmware = {
 }
 
 const store = globalThis as typeof globalThis & {
-  __fieldShelfProjectsV4?: { at: number; projects: ProjectCard[] }
+  __fieldShelfProjectsV5?: { at: number; projects: ProjectCard[] }
 }
 
 let descriptionDict: Record<string, string> | null = null
@@ -82,6 +82,36 @@ function loadDescriptionDict(): Record<string, string> {
   return descriptionDict
 }
 
+/** Cardputer Adv is a different keyboard and board from the original. Keep Adv projects only. */
+export function supportsCardputerAdv(name: string, description: string): boolean {
+  const text = `${name}\n${description}`.toLowerCase().replace(/\s+/g, " ")
+  if (plainOnly(text)) return false
+  return nameTargetsAdv(name) || textTargetsAdv(text)
+}
+
+function plainOnly(text: string): boolean {
+  return /無印(?:専用|のみ|だけ)|not (?:for|compatible with|supported on) (?:the )?(?:cardputer[\s-]*)?adv|(?:original|classic) (?:cardputer )?only|cardputer v1 only|non-adv only|without adv support/.test(
+    text,
+  )
+}
+
+function nameTargetsAdv(name: string): boolean {
+  const normalized = name.toLowerCase()
+  if (/cardputer[\s./_()\-]*adv|cardputeradv/.test(normalized)) return true
+  if (/(?:^|[\s._-])adv(?:[\s._-]|$)/.test(normalized)) return true
+  if (/^adv(?!ance|enture|ertis|ocac)/.test(normalized)) return true
+  return false
+}
+
+function textTargetsAdv(text: string): boolean {
+  if (/cardputer[\s./_()\-]*adv|cardputeradv|m5cardputer[\s\-]*adv/.test(text)) return true
+  if (/(?:cardputer|m5stack).{0,40}\badv\b/.test(text)) return true
+  if (/\badv\b.{0,40}cardputer/.test(text)) return true
+  if (/cardputer\s*(?:&|and|\/|\+)\s*adv/.test(text)) return true
+  if (/\/\s*adv\b/.test(text)) return true
+  return false
+}
+
 export function toProjectCard(input: unknown, dict: Readonly<Record<string, string>> = {}): ProjectCard | null {
   if (!input || typeof input !== "object") return null
   const raw = input as RawFirmware
@@ -91,6 +121,7 @@ export function toProjectCard(input: unknown, dict: Readonly<Record<string, stri
   if (!name || !/^[\w-]{6,80}$/.test(id)) return null
   const full = clip(raw.description, 4000)
   if (NAME_BLOCK.test(name) || TEXT_BLOCK.test(`${name}\n${full}`)) return null
+  if (!supportsCardputerAdv(name, full)) return null
   const github = githubLink(raw.github)
   const latest = latestVersion(raw.versions)
   return {
@@ -127,7 +158,7 @@ export function coverFile(value: unknown): string | null {
 }
 
 export async function listCardputerProjects(): Promise<ProjectCard[]> {
-  const memory = store.__fieldShelfProjectsV4
+  const memory = store.__fieldShelfProjectsV5
   if (memory && Date.now() - memory.at < 10 * 60_000) return memory.projects
   const response = await fetch(CATALOG_URL, {
     headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
@@ -146,7 +177,7 @@ export async function listCardputerProjects(): Promise<ProjectCard[]> {
     .map((item) => toProjectCard(item, dict))
     .filter((item): item is ProjectCard => item !== null)
     .sort((a, b) => b.downloads - a.downloads)
-  store.__fieldShelfProjectsV4 = { at: Date.now(), projects }
+  store.__fieldShelfProjectsV5 = { at: Date.now(), projects }
   return projects
 }
 

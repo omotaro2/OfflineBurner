@@ -6,6 +6,9 @@ import type { SavedBrief } from "@/components/project-browser"
 
 export type SavedFile = SavedBrief & {
   name: string
+  author?: string
+  description?: string
+  cover?: string | null
   bytes: number
   sha256: string
   savedAt?: string

@@ -237,7 +237,7 @@ export function Shelf() {
           <p className="text-xs tracking-[0.18em] text-muted-foreground uppercase">Field shelf</p>
           <h1 className="text-2xl font-semibold tracking-tight">フィールドシェルフ</h1>
           <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            家のネットで安定版を保管し、出先ではそのファイルだけを基板へ書きます。Cardputer は安定版、プロジェクト、保管、カードのタブに分かれています。シリアルで書くときは、ブラウザのタブはこのページだけにしてください。
+            家のネットで安定版を保管し、出先ではそのファイルだけを基板へ書きます。Cardputer Adv は安定版、プロジェクト、保管、カードのタブに分かれています。シリアルで書くときは、ブラウザのタブはこのページだけにしてください。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -437,7 +437,7 @@ const WORK_TABS = [
 type WorkTab = (typeof WORK_TABS)[number]["id"]
 
 function cardputerDevice(id: string): boolean {
-  return id === "cardputer" || id === "cardputer-adv"
+  return id === "cardputer-adv"
 }
 
 function FirmwareRow({
